@@ -1,4 +1,4 @@
-# Participant Framework — Milestone 1
+# Participant Framework — Milestone 2
 
 This document describes the participant-side preparation for an autonomous ML research agent. It is separate from the hackathon starter-kit README so the official starter instructions remain unchanged.
 
@@ -40,11 +40,38 @@ Each run writes state, append-only iteration records, metrics, and (for FM) a va
 
 - Do not edit `evaluate.py`; the framework detects changes and stops.
 - Development work is limited to the train/validation split. Test evaluation and submissions remain explicit participant actions.
-- The framework currently contains no LLM client, autonomous coding loop, or package-install mechanism.
+- The framework contains no LLM client or autonomous coding loop. The pilot accepts a human-written instruction and executes exactly one experiment.
+
+## Supervised pilot
+
+Create an `ExperimentSpec` JSON instruction with these required review fields:
+
+```json
+{
+  "hypothesis": "A pairwise objective will improve ranking quality.",
+  "git_diff": "",
+  "description": "Train one candidate model on train and score valid.",
+  "result_compare": "Compare primary against the FM validation baseline.",
+  "next_steps": "Keep the change only if primary improves; otherwise try the next hypothesis.",
+  "command": ["python", "experiment.py"],
+  "seed": 42,
+  "dependency_profile": "base",
+  "result_file": "experiment_result.json",
+  "artifacts": ["model.bin"]
+}
+```
+
+The command runs in Docker with no network, bounded memory/CPU/processes, and a timeout. It must write `experiment_result.json` inside the workspace, including numeric `metrics` (including `primary`) and a `status`. Protected judge files are not mounted into the container. The framework persists stdout, stderr, the instruction, git diff, modified files, result artifacts, failures, and recovery attempts under `runs/`.
+
+Run it with:
+
+```bash
+python -m framework.pilot --spec experiment.json --baseline-primary 0.6016
+```
+
+Token and cost fields are supported in the result contract but intentionally have no configured prices or limits yet. Approved dependency profiles are declarations only; the framework never installs arbitrary packages.
 
 ## Next milestones
 
-1. Add experiment specifications/results, token accounting, and convergence criteria.
-2. Add bounded execution: worktree isolation, dependency profiles, timeouts, and recovery records.
-3. Add a provider-neutral LLM adapter, compact role prompts, and allow-listed research/code/evaluation tools.
-4. Run a supervised single-experiment pilot before enabling bounded autonomous iterations.
+1. Connect the LLM with structured prompts, safe tool calls, and research/implementation/reviewer roles.
+2. Enable bounded autonomous iterations only after the supervised pilot is validated.

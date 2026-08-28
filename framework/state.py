@@ -49,6 +49,7 @@ class RunStore:
             "status": "running",
             "iterations": 0,
             "best": None,
+            "usage": {"input_tokens": 0, "output_tokens": 0, "cached_tokens": 0, "total_tokens": 0, "estimated_cost": 0.0, "models": []},
             "metadata": metadata,
         }
         atomic_write_json(self.state_path, state)
@@ -56,7 +57,29 @@ class RunStore:
 
     def read_state(self) -> dict[str, Any]:
         with self.state_path.open(encoding="utf-8") as handle:
-            return json.load(handle)
+            state = json.load(handle)
+        state.setdefault("usage", {"input_tokens": 0, "output_tokens": 0, "cached_tokens": 0, "total_tokens": 0, "estimated_cost": 0.0, "models": []})
+        state["usage"].setdefault("models", [])
+        return state
+
+    def append_audit(self, event: dict[str, Any]) -> None:
+        with (self.run_dir / "audit.jsonl").open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"recorded_at": utc_now(), **event}, sort_keys=True) + "\n")
+
+    def record_usage(self, usage: dict[str, Any]) -> dict[str, Any]:
+        state = self.read_state()
+        totals = state.setdefault("usage", {})
+        for name in ("input_tokens", "output_tokens", "cached_tokens", "total_tokens"):
+            totals[name] = int(totals.get(name, 0)) + int(usage.get(name, 0))
+        totals["estimated_cost"] = float(totals.get("estimated_cost", 0.0)) + float(usage.get("estimated_cost", 0.0))
+        models = list(totals.get("models", []))
+        model = usage.get("model")
+        if model and model not in models:
+            models.append(str(model))
+        totals["models"] = models
+        state["updated_at"] = utc_now()
+        atomic_write_json(self.state_path, state)
+        return totals
 
     def append_iteration(self, record: dict[str, Any]) -> dict[str, Any]:
         state = self.read_state()
@@ -86,4 +109,3 @@ class RunStore:
         state["updated_at"] = utc_now()
         atomic_write_json(self.state_path, state)
         return state
-

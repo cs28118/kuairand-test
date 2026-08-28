@@ -69,6 +69,9 @@ def reject_protected_paths(paths: Iterable[str | Path]) -> None:
             relative = normalized.relative_to(REPO_ROOT)
         except ValueError:
             relative = normalized
-        if relative in protected:
+        normalized_text = normalized.as_posix().lower()
+        if relative in protected or any(
+            normalized_text.endswith("/" + name.lower()) or normalized_text == name.lower()
+            for name in protected
+        ):
             raise GuardrailViolation(f"Experiments may not modify protected file: {relative}")
-

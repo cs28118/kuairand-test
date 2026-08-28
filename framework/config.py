@@ -22,6 +22,8 @@ class BenchmarkConfig:
     max_iterations: int
     max_wallclock_hours: float
     baseline_expected: dict[str, dict[str, float]]
+    execution: dict[str, Any]
+    budgets: dict[str, Any]
 
 
 def _resolve_repo_path(value: str | Path) -> Path:
@@ -48,5 +50,6 @@ def load_benchmark_config(path: str | Path | None = None) -> BenchmarkConfig:
             name: {metric: float(value) for metric, value in metrics.items()}
             for name, metrics in raw["baseline_expected"].items()
         },
+        execution=dict(raw.get("execution", {})),
+        budgets=dict(raw.get("budgets", {})),
     )
-
