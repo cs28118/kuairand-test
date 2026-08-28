@@ -17,7 +17,7 @@ tar xzf KuaiRand-Pure.tar.gz
 ## 运行
 
 ```bash
-python3 baseline.py --model fm
+python baseline.py --model fm
 ```
 
 `--data_dir` 默认 `./KuaiRand-Pure/data`；数据放在别处时显式指定。
@@ -97,9 +97,9 @@ row_id,user_id,video_id,score
 生成与校验：
 
 ```bash
-python3 submit.py --make  --split test  submission.csv    # 用官方 FM baseline 生成一份示例提交
-python3 submit.py --check --split test  submission.csv    # 校验格式与对齐
-python3 submit.py --score --split valid submission.csv    # 校验并打分（本地 valid 可用）
+python submit.py --make  --split test  submission.csv    # 用官方 FM baseline 生成一份示例提交
+python submit.py --check --split test  submission.csv    # 校验格式与对齐
+python submit.py --score --split valid submission.csv    # 校验并打分（本地 valid 可用）
 ```
 
 `--check` 会拒绝：表头错误、行数不符、`row_id` 跳号、`user_id`/`video_id` 与评测集不对齐、
