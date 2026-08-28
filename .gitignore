@@ -1,3 +1,5 @@
 #dataset
 KuaiRand-Pure/
 
+#run cache
+__pycache__/
