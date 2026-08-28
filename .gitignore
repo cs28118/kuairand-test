@@ -9,3 +9,11 @@ submission.csv
 
 #AGENT.md file
 AGENT.md
+
+# participant framework runtime state and local credentials
+.env
+.venv/
+.pytest_cache/
+runs/
+artifacts/
+worktrees/

@@ -1,0 +1,31 @@
+{
+  "data_dir": "KuaiRand-Pure/data",
+  "label": "long_view",
+  "development_splits": ["train", "valid"],
+  "primary_metric": "primary",
+  "convergence": {
+    "epsilon": 0.002,
+    "patience": 3
+  },
+  "limits": {
+    "max_iterations": 50,
+    "max_wallclock_hours": 6
+  },
+  "baseline_expected": {
+    "random": {
+      "GAUC": 0.4993,
+      "nDCG@5": 0.4675,
+      "primary": 0.4834
+    },
+    "pop": {
+      "GAUC": 0.6387,
+      "nDCG@5": 0.5227,
+      "primary": 0.5807
+    },
+    "fm": {
+      "GAUC": 0.6674,
+      "nDCG@5": 0.5357,
+      "primary": 0.6016
+    }
+  }
+}

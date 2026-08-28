@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kuairand-research-framework"
+version = "0.1.0"
+description = "Participant-side execution framework for the KuaiRand-Pure hackathon"
+requires-python = ">=3.12"
+dependencies = ["numpy>=1.26"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+ml = ["torch"]
+
+[tool.setuptools]
+packages = ["framework"]
