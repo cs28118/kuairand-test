@@ -3,3 +3,9 @@ KuaiRand-Pure/
 
 #run cache
 __pycache__/
+
+#submission
+submission.csv
+
+#AGENT.md file
+AGENT.md
