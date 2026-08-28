@@ -1,0 +1,161 @@
+# Autonomous Machine Learning Research Agent for Recommender Systems
+
+## 2.1 Background
+
+### Motivation
+
+Machine learning engineers (MLEs) spend much of their time on a single activity: **taking a dataset and a set of metrics, then iterating on a model again and again to push the score higher.** This work is inherently cyclic — every round repeats the same loop, shown in Figure 1.
+
+**Figure 1. The MLE iteration loop.** A closed cycle of five core stages, plus a reflection step that feeds the next round:
+1. **Read the problem** — understand the given dataset and the target metrics.
+2. **Inspect data** — study data distribution through exploratory data analysis (EDA).
+3. **Engineer features** — build and select input features (see Appendix A.5).
+4. **Train + tune** — choose a model, set the loss function, and tune hyperparameters.
+5. **Evaluate** — read the metrics, check for overfitting, and consult the leaderboard.
+
+The result of the **evaluate** stage drives a **reflect + revise** step, which decides what to change and loops back into the next iteration — re-inspecting the data and adjusting the features. The cycle repeats until the score plateaus.
+
+---
+
+Two of these stages — **engineer features** and **train + tune** — are carried out almost entirely in code: the engineer writes scripts to transform the data, define the model, and run training. In other words, each turn of the loop produces and modifies code. This is what makes the loop a natural target for automation: it is structured and repeatable, yet writing and revising that code is exactly the kind of task a code-generating LLM can take on.
+
+The loop is also repetitive and mechanical. It draws heavily on "engineering intuition," but many individual steps are well-structured and repeatedly exercised in practice — which is precisely why automating the whole cycle has become an active research direction.
+
+### Prior Work
+
+Over the past two years, a new line of work has set out to automate this loop: the **Autonomous ML Research Agent**, an LLM-driven agent that runs the cycle in Figure 1 on its own. It reads the problem, **writes the code** for each stage, trains and evaluates the model, reflects on the results, revises its approach, and finally produces a submission. Representative systems include:
+
+- **MLE-Bench** [1] (OpenAI) — a benchmark of 75 Kaggle competitions, now a standard evaluation suite for such agents.
+- **AIDE** [2] (Weco AI) — a state-of-the-art agent that frames ML engineering as code optimization and explores the space of solutions via tree search.
+- **AI-Scientist-v2** [3] (Sakana AI) — an end-to-end agent for autonomous scientific and ML research, using agentic tree search to form hypotheses, run experiments, and write up results.
+
+### This Challenge
+
+This challenge asks participants to design an **autonomous ML research agent**. Given a public ML dataset and a set of metrics, the agent must **autonomously** run the full loop of Figure 1 — read the problem, engineer features, train and tune the model, evaluate, then reflect and iterate — to reach the highest possible score across the test sets. Writing the code for each stage is part of the agent's job, not something provided in advance.
+
+**New to recommender systems?** All benchmarks in this challenge come from the recommendation domain (the KuaiRand family). If terms such as CTR, multi-task learning, GAUC, or NDCG are unfamiliar, start with the **Appendix: A Primer on Recommender Systems** . At the end of this document — a concept map plus an annotated reading list designed to get you oriented in 1–2 hours.
+
+## 2.2 Problem Statement
+
+### The Task
+
+Design and implement an Autonomous ML Research Agent. For each benchmark, the agent must autonomously:
+
+1. **Reproduce the official baseline**. Stand up a working end-to-end pipeline and confirm it reaches the official baseline's reported validation score. (The official baseline is a fixed, organizer-provided reference — see Benchmarks. Any starter pipeline the agent builds for itself is an internal step, not the reference it is scored against.)
+2. **Iterate on the pipeline**. Autonomously draw on established methods from both industry and academia to improve each stage of the pipeline (see Figure 1), and apply those improvements in code. The agent develops using **only the training split and the public validation feedback** — it never has access to the hidden test set.
+3. **Improve over the baseline.** Through repeated iterations, drive the **validation** score above the official baseline. Improvement need not be strictly monotonic — as with real-world data, the trajectory may fluctuate — but the agent should show a clear, sustained ability to keep improving relative to the baseline. Final ranking is computed once, on the **hidden test set**, using the submission the agent designates as final.
+
+### Task Requirements
+
+4. **Runs end-to-end and aims to beat the baseline.** The agent must run the full pipeline on the required benchmark (KuaiRand-Pure) and reach a converged result; attempting the bonus benchmark (KuaiRand-1k & KuaiRand-27k) is optional. The target is a hidden-test score that exceeds the official baseline; the actual delta achieved — positive or negative — is what feeds into the Primary metric scoring (see Judging Criteria), so falling short of the baseline is scored continuously rather than treated as a disqualifying failure.
+5. **Iterates autonomously across the full stack.** The agent should improve the solution on its own, driven by its own evaluation of results. Improvements may target any part of the algorithmic stack — not just the model architecture, but every upstream and downstream module is fair game. The goal is to **minimize human intervention** — a fully autonomous run is the ideal, but a well-instrumented **semi-automated** pipeline that requires only a handful of interventions is an acceptable and realistic outcome; in practice, we measure how little human intervention a run requires (e.g. the number of manual interventions).
+6. **Robust operation**. The pipeline should run reliably with **minimal human intervention**. Robustness here is about how the agent handles difficulty, not how often it succeeds — we do not score it by failure count, since a capable agent may fail only on genuinely hard problems. What matters is that when a step fails (a code error, a timeout, an unexpected input), the agent can recover, retry, or route around it, and that long iterative runs neither crash, stall, nor diverge.
+
+## 2.3 Constraints & Scope
+
+| Category | Constraints & Scope Details |
+| :--- | :--- |
+| In scope | <ul><li> Any open-source library or framework (PyTorch, RecBole, TorchRec, LightGBM, …) </li><li> Any papers, public solutions, or pretrained weights</li><li> - Changes to any pipeline stage — not just the model </li></ul> |
+| Out of scope | <ul><li> No external training data or pretrained weights trained on these benchmarks' test labels </li><li> No hidden-test access during development (train + validation only) </li></ul> |
+| Limits | <ul><li> **KuaiRand-Pure**: NDCG@10 / Recall@50, click = positive (fixed) (Required); **KuaiRand-1k & KuaiRand-27k**: same task and metrics (Bonus) </li><li> Hidden test scored once, on the final submission </li><li> **Compute budget: 50 iterations** per benchmark run (hard cap; the convergence rule ε = 0.002 / N = 3 normally triggers first), plus a **6 h wall-clock** ceiling per run as a backstop. Compute is deliberately not the binding constraint on this benchmark — 100 iterations of the official baseline take about 28 min on a single CPU core with no GPU. GPU-hours and LLM tokens are reported for Feasibility scoring, not capped. </li></ul> |
+| Allowed assumptions | <ul><li> Fixed `train / validation / hidden-test` split per dataset </li><li> Official baseline, scores & evaluation script (incl. convergence rule) </li><li> Example submission + output schema </li></ul> |
+
+## 2.4 Available Resources & Data
+
+### Starter Kit
+
+To lower the barrier to entry — especially for participants new to recommender systems — the challenge provides a standard starting point. Download: **kuairand-starter-kit.zip** (above) — numpy only (no torch / pandas / scikit-learn); python3 baseline.py --model fm reproduces the official baseline in about 40 s on a single CPU core. It contains:
+
+1. **Fixed data splits:** date-based, taken from the two standard logs (log_standard_4_08_to_4_21_pure.csv & log_standard_4_22_to_5_08_pure.csv). **train** = date 20220408–20220421 (1,141,112 rows) / **validation** = date 20220422–20220428 (124,909 rows) / **test** = date 20220429–20220508 (170,588 rows). Teams develop on train + validation only; the hidden test set is scored once. Splitting by date rather than by row count avoids any tie-breaking ambiguity on equal timestamps.
+2. **Official baseline:** a fixed, organizer-provided reference pipeline shipped in the Starter Kit — a Factorization Machine (k=16, lr=0.001, 5 categorical fields), numpy only, about 40 s on CPU. Published **hidden-test** scores: GAUC **0.6610** / nDCG@5 **0.5282** / primary **0.5946** (mean over 5 seeds, std 0.0008). Validation: GAUC 0.6674 / nDCG@5 0.5357 / primary 0.6016. Reference rungs for harness self-check — random scoring: primary 0.4753; item popularity: primary 0.5715. Beating this baseline is what counts — not a baseline the team builds itself.
+3. **Evaluation script:** the exact scoring code (GAUC / nDCG@5) ships in the Starter Kit as evaluate.py. It is model-agnostic — it takes only (user_ids, labels, scores), so any model can be scored with it. **Pinned conventions:** users with zero positives count as nDCG = 0 and are included in the average; GAUC counts only users with 0 < positives < impressions, weighted by positive count; nDCG gain = 2^rel − 1. **Convergence rule: ε = 0.002, N = 3** — a run is converged when the validation primary score has not improved by more than ε over the last N consecutive iterations (ε ≈ 2.5σ of the baseline's 5-seed std of 0.0008). The absolute-delta aggregation is unchanged.
+4. **Submission format:** a CSV with the header row_id,user_id,video_id,score, one line per evaluation-split row. row_id is a 0-based, strictly increasing index into the split as produced by data.load(); user_id / video_id are redundant fields used only to verify alignment; score is any real number (only the relative order matters), and NaN / Inf are rejected. The row_id is required because (user_id, video_id) is **not unique** in the evaluation split — 3.06% of test rows are repeated pairs, up to 12 times — so it cannot serve as a key. Generate a runnable example with python3 submit.py --make and validate with --check, which rejects a wrong header, a row-count mismatch, row_id gaps, misalignment against the evaluation split, and non-numeric scores.
+5. **Run-log requirements:** each iteration should record its **hypothesis**, the **code diff**, the resulting **metrics**, and any **error / recovery events**. These logs are how judges assess **Autonomy** (scored under Impact & Relevance) and **Robustness** (scored under Technical Execution) — see Judging Criteria.
+6. **LLM coding agent**: you can use whatever you like, or use Trae from ByteDance, which provides "Limited offer: new user 7-day free trial". 
+
+### Benchmarks
+
+**KuaiRand-Pure is required** and determines 100% of the primary score. **KuaiRand-1k and KuaiRand-27k are bonus datasets** — attempting them is optional and earns extra credit, but neither is required to complete the primary score.
+
+**Resource policy.** This is a hackathon, so external resources are open by default: use any open-source library (PyTorch, RecBole, TorchRec, LightGBM, …), read any papers, docs, or public solutions, and use pretrained model weights freely. The agent is expected to draw on whatever published methods it can find — that is what makes it a research agent.
+
+There is **one hard rule: no external training data.** Training must rely only on the KuaiRand datasets listed below — no augmenting, joining, or pre-training on any other dataset, and no pretrained model whose weights were trained on these benchmarks' test labels. This single rule is what keeps the hidden-test ranking fair; everything else is unrestricted.
+
+| Dataset | Domain & Description | Metrics | Scale |
+| :--- | :--- | :--- | :--- |
+|**KuaiRand** (Kuaishou) Three released variants: **KuaiRand-Pure** is required, while **KuaiRand-1k and KuaiRand-27k** are bonus. | Short-video feed. 12 feedback signals (click / like / follow / comment / forward / long_view / play_time …) plus a randomized-exposure intervention that supports counterfactual evaluation. **Relevance label, task form and metrics are fixed by the organizers** (pinned in the Starter Kit): the task treats long_view (native column) as the positive relevance label, ranks **within each user's logged impressions** (not full-catalog retrieval), and reports **GAUC / nDCG@5**. Primary score = mean(GAUC, nDCG@5). | GAUC / nDCG@5 | Pure: 1.4M interactions (27K users × 7.6K items). 1k: 11.7M. 27k: 322M. |
+
+
+Links: KuaiRand — https://kuairand.com
+KuaiRand's randomized-exposure data also enables off-policy / counterfactual evaluation (OPE).
+
+## 2.5 Deliverables
+
+1. **Written Project Description (via Devpost)**
+- Provide a clear written description of your project that includes:
+  - How your solution addresses the problem statement
+  - Development tools used (e.g. VSCode, Colab, Jupyter)
+  - APIs used (e.g. OpenAI GPT-4o, Google Maps API)
+  - Libraries and frameworks used (e.g. Hugging Face Transformers, PyTorch, scikit-learn, pandas)
+  - Datasets and assets used (e.g. Google Local Reviews dataset, manually labelled data)
+2. **Public Code/GitHub Repository**
+- Submit a link to a public Code/GitHub repository containing:
+  - Well-structured, commented code covering all components of your solution
+  - A README file that includes:
+    - Project overview
+    - Setup and installation instructions
+    - Steps to reproduce your results
+    - A brief reflection on your solution's limitations and what you would improve given more time
+    - Team member contributions (if applicable, i.e. team participants, non-solo participants)
+3. **Run & Iteration Logs**
+- Submit the per-iteration log required in the Starter Kit (Run-log requirements), covering:
+  - Hypothesis for that iteration — what the agent intended to try and why
+  - The code diff applied
+  - The resulting metrics (GAUC / nDCG@5 for the KuaiRand benchmarks)
+  - Any error or recovery events encountered, and how the agent handled them
+- A short summary reporting the number of manual interventions during the run (used to assess autonomy per Task Requirement 2)
+4. **Final Submission & Results Summary**
+- Submit your final model output/checkpoint for the required benchmark (KuaiRand-Pure), in the schema defined by the Starter Kit. If you also attempt the bonus benchmarks (KuaiRand-1k & KuaiRand-27k), submit their outputs as well for bonus scoring.
+- A results table reporting your validation-best score for the required benchmark's metrics (KuaiRand-Pure GAUC / nDCG@5), and its absolute delta over the official baseline (per the Judging Criteria scoring formula); if you attempted the bonus benchmarks (KuaiRand-1k & KuaiRand-27k), include their GAUC / nDCG@5 results as well
+- Reported resource usage required to reach the converged result: total token consumption (input + output) from the agent's LLM calls, the total **agent wall-clock** of the run, and the number of iterations used (out of the 50-iteration cap). Report GPU-hours as well if any GPU was used. These feed Feasibility & Practicality scoring.
+
+## 2.6 Judging Criteria
+
+| Judging Criteria | Weight |
+| :--- | :--- |
+| Technical Execution | 35% |
+| Innovation & Problem Insight | 20% |
+| Impact & Relevance | 20% |
+| Feasibility & Practicality | 15% |
+| Presentation & Communication (Final Event Only) | 10% |
+
+### Technical Execution — Primary Metric & Robustness
+
+**Primary metric**. We score the **converged result**, not the peak and not the intermediate trajectory. A run is considered converged when **validation score has not improved by more than ε = 0.002 over the last N = 3 consecutive iterations**, or when the run hits the **50-iteration cap** or the **6 h wall-clock ceiling** — whichever comes first. The submission scored for ranking is the validation-best checkpoint at that point, evaluated **once on the hidden test set**. The agent develops only on train + validation; it never sees the hidden test set.
+- **KuaiRand-Pure is the required benchmark** and determines 100% of the Primary metric score. **KuaiRand-1k and KuaiRand-27k are bonus benchmarks**: a strong result on either earns additional bonus points on top of the Primary metric score, but skipping them does not reduce the KuaiRand-Pure score.
+- Per-dataset metrics: **KuaiRand-Pure / KuaiRand-1k / KuaiRand-27k** → GAUC / nDCG@5. Within each dataset, the score is the **equal-weighted average of each metric's absolute improvement over the official baseline** on the hidden test set. For every metric m:
+
+```
+delta(m) = score_agent(m) − score_baseline(m)
+score_dataset = mean over m of  delta(m)
+```
+
+- **Reading the numbers.** The metrics do not span [0, 1]. On the hidden test set, 27.1% of users have no positive label (their nDCG is 0 for any model) and 9.2% are all-positive, so a perfect ranking — using the true labels as the score — reaches only GAUC 1.0000 / nDCG@5 **0.7289** / primary **0.8645**. Random scoring sits at primary 0.4753. The official baseline's 0.5946 therefore already captures about 31% of the attainable range; judge progress against the 0.8645 ceiling, not against 1.0.
+**Robustness**. Not judged by whether the agent ever hits a failure, but by **how it handles one** — recovering, retrying, or routing around a failed step (a code error, a timeout, an unexpected input) so that long iterative runs neither crash, stall, nor diverge before hitting the compute/wall-clock budget.
+
+### Innovation & Problem Insight
+
+Judged on what the agent identified as worth trying and why — not on implementation.
+- What the agent chose to target across the full algorithmic stack (features, model architecture, training strategy, evaluation loop, etc. — improvements are not limited to the model itself) and the reasoning behind that choice.
+- Originality in drawing on published methods, papers, or public solutions — rewarding agents that go beyond naive baseline tweaks.
+
+### Impact & Relevance — Autonomy
+
+**Autonomy**. How much of the improvement loop the agent drives on its own — proposing and testing changes based on its own evaluation of results, not just tuning the model architecture. Measured primarily by the **number of manual interventions** required to reach the converged result; fewer interventions score higher, with fully autonomous runs scoring highest. The fewer humans required, the more this reflects real acceleration of recommender-system R&D.
+
+### Feasibility & Practicality — Resource Consumption
+
+How much it costs — in LLM usage and agent wall-clock — to reach the converged result. Two rules make this comparable: it is **scored only among submissions whose hidden-test primary score exceeds the official baseline**, and it is graded in **three coarse tiers** (low / medium / high consumption) rather than a continuous ranking. Without the quality gate the criterion would fight the Primary metric — an agent that stopped after three iterations would look cheapest and score worst.
+
+- **Token consumption.** Total input + output tokens used by the agent's LLM calls across the run.
+- **Agent wall-clock.** Total elapsed time of the agent run to reach the converged result. This replaces GPU-hours as the scored compute measure: on this benchmark the reference pipeline needs no GPU at all (about 28 min of single-core CPU for 100 iterations), so GPU-hours would be ~0 for most teams and would only penalise whoever happened to use a GPU. Report GPU-hours if any were used, but wall-clock is what is scored.
