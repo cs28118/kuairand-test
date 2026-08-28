@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import csv
 from pathlib import Path
 import re
 import shutil
@@ -45,7 +46,7 @@ def _snapshot(root: Path) -> dict[str, str]:
     return snapshot
 
 
-def _diff_paths(git_diff: str) -> list[str]:
+def diff_paths(git_diff: str) -> list[str]:
     paths: list[str] = []
     for line in git_diff.splitlines():
         match = re.match(r"^(?:\+\+\+|---) [ab]/(.+)$", line)
@@ -65,13 +66,16 @@ class DockerWorkspace:
 
     def prepare(self, spec: ExperimentSpec) -> Path:
         self.parent.mkdir(parents=True, exist_ok=True)
-        diff_paths = _diff_paths(spec.git_diff)
-        reject_protected_paths(diff_paths)
-        for candidate in diff_paths:
+        changed_paths = diff_paths(spec.git_diff)
+        reject_protected_paths(changed_paths)
+        for candidate in changed_paths:
             if ".." in Path(candidate).parts or Path(candidate).is_absolute():
                 raise IsolationError(f"git diff contains an unsafe path: {candidate}")
-        ignore = shutil.ignore_patterns(".git", "runs", "__pycache__", "*.pyc", ".env", ".env.*")
+        ignore = shutil.ignore_patterns(
+            ".git", "runs", "__pycache__", "*.pyc", ".env", ".env.*", "data", "submission.csv"
+        )
         shutil.copytree(self.repo_root, self.path, ignore=ignore)
+        self._copy_development_data()
         # Protected files are intentionally absent from the container.  The
         # host framework remains responsible for official validation.
         protected = json.loads((self.repo_root / "configs" / "official_files.json").read_text(encoding="utf-8"))["sha256"]
@@ -82,16 +86,42 @@ class DockerWorkspace:
         self._before = _snapshot(self.path)
         if spec.git_diff:
             process = subprocess.run(
-                ["git", "apply", "--whitespace=nowarn", "-"],
-                input=spec.git_diff,
-                text=True,
+                ["git", "apply", "--recount", "--unidiff-zero", "--whitespace=nowarn", "-"],
+                input=spec.git_diff.encode("utf-8"),
                 cwd=self.path,
                 capture_output=True,
                 check=False,
             )
             if process.returncode != 0:
-                raise IsolationError(f"git diff could not be applied: {process.stderr.strip()}")
+                error = process.stderr.decode("utf-8", errors="replace").strip()
+                raise IsolationError(f"git diff could not be applied: {error}")
         return self.path
+
+    def _copy_development_data(self) -> None:
+        """Copy only train/valid rows; hidden-test dates never enter Docker."""
+        source = self.repo_root / "KuaiRand-Pure" / "data"
+        target = self.path / "KuaiRand-Pure" / "data"
+        if not source.is_dir():
+            return
+        target.mkdir(parents=True, exist_ok=True)
+        video_features = source / "video_features_basic_pure.csv"
+        if video_features.is_file():
+            shutil.copy2(video_features, target / video_features.name)
+        for name in ("log_standard_4_08_to_4_21_pure.csv", "log_standard_4_22_to_5_08_pure.csv"):
+            input_path = source / name
+            output_path = target / name
+            if not input_path.is_file():
+                continue
+            with input_path.open(newline="", encoding="utf-8") as input_handle, output_path.open(
+                "w", newline="", encoding="utf-8"
+            ) as output_handle:
+                reader = csv.DictReader(input_handle)
+                writer = csv.DictWriter(output_handle, fieldnames=reader.fieldnames or [])
+                writer.writeheader()
+                for row in reader:
+                    date = int(row["date"])
+                    if 20220408 <= date <= 20220428:
+                        writer.writerow(row)
 
     def modified_files(self) -> list[str]:
         after = _snapshot(self.path)

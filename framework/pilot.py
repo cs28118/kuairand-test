@@ -14,7 +14,7 @@ from .benchmark import load_development_splits, run_baseline
 from .config import BenchmarkConfig, REPO_ROOT, load_benchmark_config
 from .contracts import ExperimentResult, ExperimentSpec, load_experiment_spec
 from .guardrails import GuardrailViolation, verify_official_files
-from .isolation import DockerExecutor, DockerWorkspace, ExecutionOutcome, IsolationError
+from .isolation import DockerExecutor, DockerWorkspace, ExecutionOutcome, IsolationError, diff_paths
 from .state import RunStore
 
 
@@ -106,6 +106,7 @@ def run_pilot(
     artifact_dir.mkdir(parents=True, exist_ok=False)
     workspace = DockerWorkspace(repo_root, artifact_dir / "isolation")
     outcome: ExecutionOutcome | None = None
+    prepared_modified: list[str] = diff_paths(spec.git_diff)
     result = _attach_instruction(_failure("failed", "experiment did not start"), spec)
     try:
         existing = run_store.read_state().get("usage", {})
@@ -120,6 +121,7 @@ def run_pilot(
         )
         ledger.require_capacity()
         workspace.prepare(spec)
+        prepared_modified = sorted(set(prepared_modified) | set(workspace.modified_files()))
         execution = config.execution
         executor = DockerExecutor(
             image=str(execution.get("docker_image", "python:3.12-slim")),
@@ -129,6 +131,7 @@ def run_pilot(
             docker_executable=str(execution.get("docker_executable", "docker")),
         )
         outcome = executor.execute(spec, workspace)
+        outcome.modified_files = sorted(set(prepared_modified) | set(outcome.modified_files))
         (artifact_dir / "stdout.txt").write_text(outcome.stdout, encoding="utf-8")
         (artifact_dir / "stderr.txt").write_text(outcome.stderr, encoding="utf-8")
         result_source = workspace.path / spec.result_file
@@ -153,7 +156,9 @@ def run_pilot(
                 result.status = "failed"
                 result.failure_reason = f"result is missing required metric: {config.primary_metric}"
 
+        result = _attach_instruction(result, spec)
         usage = _usage(result.token_usage)
+        result.token_usage = usage.to_dict()
         try:
             ledger.record(usage)
             run_store.record_usage(usage.to_dict())
@@ -194,7 +199,7 @@ def run_pilot(
         result.stderr = str(artifact_dir / "stderr.txt")
     finally:
         if workspace.path.exists():
-            final_modified = workspace.modified_files()
+            final_modified = sorted(set(prepared_modified) | set(workspace.modified_files()))
         else:
             final_modified = []
         run_store.append_audit(

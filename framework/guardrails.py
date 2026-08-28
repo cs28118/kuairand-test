@@ -71,7 +71,7 @@ def reject_protected_paths(paths: Iterable[str | Path]) -> None:
             relative = normalized
         normalized_text = normalized.as_posix().lower()
         if relative in protected or any(
-            normalized_text.endswith("/" + name.lower()) or normalized_text == name.lower()
+            normalized_text.endswith("/" + str(name).lower()) or normalized_text == str(name).lower()
             for name in protected
         ):
             raise GuardrailViolation(f"Experiments may not modify protected file: {relative}")

@@ -12,7 +12,7 @@
     "max_wallclock_hours": 6
   },
   "execution": {
-    "docker_image": "python:3.12-slim",
+    "docker_image": "kuairand-research:numpy",
     "timeout_seconds": 1800,
     "memory_limit": "4g",
     "cpus": 2
