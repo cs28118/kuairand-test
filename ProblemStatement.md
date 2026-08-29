@@ -6,16 +6,15 @@
 
 Machine learning engineers (MLEs) spend much of their time on a single activity: **taking a dataset and a set of metrics, then iterating on a model again and again to push the score higher.** This work is inherently cyclic — every round repeats the same loop, shown in Figure 1.
 
-**Figure 1. The MLE iteration loop.** A closed cycle of five core stages, plus a reflection step that feeds the next round:
-1. **Read the problem** — understand the given dataset and the target metrics.
-2. **Inspect data** — study data distribution through exploratory data analysis (EDA).
-3. **Engineer features** — build and select input features (see Appendix A.5).
-4. **Train + tune** — choose a model, set the loss function, and tune hyperparameters.
-5. **Evaluate** — read the metrics, check for overfitting, and consult the leaderboard.
-
-The result of the **evaluate** stage drives a **reflect + revise** step, which decides what to change and loops back into the next iteration — re-inspecting the data and adjusting the features. The cycle repeats until the score plateaus.
-
----
+> **Figure 1. The MLE iteration loop.** A closed cycle of five core stages, plus a reflection step that feeds the next round:
+>
+> 1. **Read the problem** — understand the given dataset and the target metrics.
+> 2. **Inspect data** — study data distribution through exploratory data analysis (EDA).
+> 3. **Engineer features** — build and select input features (see Appendix A.5).
+> 4. **Train + tune** — choose a model, set the loss function, and tune hyperparameters.
+> 5. **Evaluate** — read the metrics, check for overfitting, and consult the leaderboard.
+>
+> The result of the **evaluate** stage drives a **reflect + revise** step, which decides what to change and loops back into the next iteration — re-inspecting the data and adjusting the features. The cycle repeats until the score plateaus.
 
 Two of these stages — **engineer features** and **train + tune** — are carried out almost entirely in code: the engineer writes scripts to transform the data, define the model, and run training. In other words, each turn of the loop produces and modifies code. This is what makes the loop a natural target for automation: it is structured and repeatable, yet writing and revising that code is exactly the kind of task a code-generating LLM can take on.
 
@@ -33,7 +32,7 @@ Over the past two years, a new line of work has set out to automate this loop: t
 
 This challenge asks participants to design an **autonomous ML research agent**. Given a public ML dataset and a set of metrics, the agent must **autonomously** run the full loop of Figure 1 — read the problem, engineer features, train and tune the model, evaluate, then reflect and iterate — to reach the highest possible score across the test sets. Writing the code for each stage is part of the agent's job, not something provided in advance.
 
-**New to recommender systems?** All benchmarks in this challenge come from the recommendation domain (the KuaiRand family). If terms such as CTR, multi-task learning, GAUC, or NDCG are unfamiliar, start with the **Appendix: A Primer on Recommender Systems** . At the end of this document — a concept map plus an annotated reading list designed to get you oriented in 1–2 hours.
+> **New to recommender systems?** All benchmarks in this challenge come from the recommendation domain (the KuaiRand family). If terms such as CTR, multi-task learning, GAUC, or NDCG are unfamiliar, start with the **Appendix: A Primer on Recommender Systems** . At the end of this document — a concept map plus an annotated reading list designed to get you oriented in 1–2 hours.
 
 ## 2.2 Problem Statement
 
@@ -64,12 +63,12 @@ Design and implement an Autonomous ML Research Agent. For each benchmark, the ag
 
 ### Starter Kit
 
-To lower the barrier to entry — especially for participants new to recommender systems — the challenge provides a standard starting point. Download: **kuairand-starter-kit.zip** (above) — numpy only (no torch / pandas / scikit-learn); python3 baseline.py --model fm reproduces the official baseline in about 40 s on a single CPU core. It contains:
+To lower the barrier to entry — especially for participants new to recommender systems — the challenge provides a standard starting point. Download: **kuairand-starter-kit.zip** (above) — numpy only (no torch / pandas / scikit-learn); `python baseline.py --model fm` reproduces the official baseline in about 40 s on a single CPU core. It contains:
 
-1. **Fixed data splits:** date-based, taken from the two standard logs (log_standard_4_08_to_4_21_pure.csv & log_standard_4_22_to_5_08_pure.csv). **train** = date 20220408–20220421 (1,141,112 rows) / **validation** = date 20220422–20220428 (124,909 rows) / **test** = date 20220429–20220508 (170,588 rows). Teams develop on train + validation only; the hidden test set is scored once. Splitting by date rather than by row count avoids any tie-breaking ambiguity on equal timestamps.
+1. **Fixed data splits:** date-based, taken from the two standard logs (`log_standard_4_08_to_4_21_pure.csv` & `log_standard_4_22_to_5_08_pure.csv`). **train** = date 20220408–20220421 (1,141,112 rows) / **validation** = date 20220422–20220428 (124,909 rows) / **test** = date 20220429–20220508 (170,588 rows). Teams develop on train + validation only; the hidden test set is scored once. Splitting by date rather than by row count avoids any tie-breaking ambiguity on equal timestamps.
 2. **Official baseline:** a fixed, organizer-provided reference pipeline shipped in the Starter Kit — a Factorization Machine (k=16, lr=0.001, 5 categorical fields), numpy only, about 40 s on CPU. Published **hidden-test** scores: GAUC **0.6610** / nDCG@5 **0.5282** / primary **0.5946** (mean over 5 seeds, std 0.0008). Validation: GAUC 0.6674 / nDCG@5 0.5357 / primary 0.6016. Reference rungs for harness self-check — random scoring: primary 0.4753; item popularity: primary 0.5715. Beating this baseline is what counts — not a baseline the team builds itself.
-3. **Evaluation script:** the exact scoring code (GAUC / nDCG@5) ships in the Starter Kit as evaluate.py. It is model-agnostic — it takes only (user_ids, labels, scores), so any model can be scored with it. **Pinned conventions:** users with zero positives count as nDCG = 0 and are included in the average; GAUC counts only users with 0 < positives < impressions, weighted by positive count; nDCG gain = 2^rel − 1. **Convergence rule: ε = 0.002, N = 3** — a run is converged when the validation primary score has not improved by more than ε over the last N consecutive iterations (ε ≈ 2.5σ of the baseline's 5-seed std of 0.0008). The absolute-delta aggregation is unchanged.
-4. **Submission format:** a CSV with the header row_id,user_id,video_id,score, one line per evaluation-split row. row_id is a 0-based, strictly increasing index into the split as produced by data.load(); user_id / video_id are redundant fields used only to verify alignment; score is any real number (only the relative order matters), and NaN / Inf are rejected. The row_id is required because (user_id, video_id) is **not unique** in the evaluation split — 3.06% of test rows are repeated pairs, up to 12 times — so it cannot serve as a key. Generate a runnable example with python3 submit.py --make and validate with --check, which rejects a wrong header, a row-count mismatch, row_id gaps, misalignment against the evaluation split, and non-numeric scores.
+3. **Evaluation script:** the exact scoring code (GAUC / nDCG@5) ships in the Starter Kit as `evaluate.py`. It is model-agnostic — it takes only `(user_ids, labels, scores)`, so any model can be scored with it. **Pinned conventions:** users with zero positives count as nDCG = 0 and are included in the average; GAUC counts only users with 0 < positives < impressions, weighted by positive count; nDCG gain = 2^rel − 1. **Convergence rule: ε = 0.002, N = 3** — a run is converged when the validation primary score has not improved by more than ε over the last N consecutive iterations (ε ≈ 2.5σ of the baseline's 5-seed std of 0.0008). The absolute-delta aggregation is unchanged.
+4. **Submission format:** a CSV with the header `row_id,user_id,video_id,score`, one line per evaluation-split row. `row_id` is a 0-based, strictly increasing index into the split as produced by `data.load()`; `user_id` / `video_id` are redundant fields used only to verify alignment; `score` is any real number (only the relative order matters), and NaN / Inf are rejected. The `row_id` is required because `(user_id, video_id)` is **not unique** in the evaluation split — 3.06% of test rows are repeated pairs, up to 12 times — so it cannot serve as a key. Generate a runnable example with `python submit.py --make` and validate with `--check`, which rejects a wrong header, a row-count mismatch, `row_id` gaps, misalignment against the evaluation split, and non-numeric scores.
 5. **Run-log requirements:** each iteration should record its **hypothesis**, the **code diff**, the resulting **metrics**, and any **error / recovery events**. These logs are how judges assess **Autonomy** (scored under Impact & Relevance) and **Robustness** (scored under Technical Execution) — see Judging Criteria.
 6. **LLM coding agent**: you can use whatever you like, or use Trae from ByteDance, which provides "Limited offer: new user 7-day free trial". 
 
@@ -83,11 +82,11 @@ There is **one hard rule: no external training data.** Training must rely only o
 
 | Dataset | Domain & Description | Metrics | Scale |
 | :--- | :--- | :--- | :--- |
-|**KuaiRand** (Kuaishou) Three released variants: **KuaiRand-Pure** is required, while **KuaiRand-1k and KuaiRand-27k** are bonus. | Short-video feed. 12 feedback signals (click / like / follow / comment / forward / long_view / play_time …) plus a randomized-exposure intervention that supports counterfactual evaluation. **Relevance label, task form and metrics are fixed by the organizers** (pinned in the Starter Kit): the task treats long_view (native column) as the positive relevance label, ranks **within each user's logged impressions** (not full-catalog retrieval), and reports **GAUC / nDCG@5**. Primary score = mean(GAUC, nDCG@5). | GAUC / nDCG@5 | Pure: 1.4M interactions (27K users × 7.6K items). 1k: 11.7M. 27k: 322M. |
+|**KuaiRand** (Kuaishou) <br><br> Three released variants: **KuaiRand-Pure** is required, while **KuaiRand-1k and KuaiRand-27k** are bonus. | Short-video feed. 12 feedback signals (click / like / follow / comment / forward / long_view / play_time …) plus a randomized-exposure intervention that supports counterfactual evaluation. **Relevance label, task form and metrics are fixed by the organizers** (pinned in the Starter Kit): the task treats `long_view` (native column) as the positive relevance label, ranks **within each user's logged impressions** (not full-catalog retrieval), and reports **GAUC / nDCG@5**. Primary score = mean(GAUC, nDCG@5). | GAUC / nDCG@5 | Pure: 1.4M interactions (27K users × 7.6K items). 1k: 11.7M. 27k: 322M. |
 
 
 Links: KuaiRand — https://kuairand.com
-KuaiRand's randomized-exposure data also enables off-policy / counterfactual evaluation (OPE).
+> KuaiRand's randomized-exposure data also enables off-policy / counterfactual evaluation (OPE).
 
 ## 2.5 Deliverables
 
