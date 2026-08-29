@@ -144,9 +144,23 @@ def _validated_diff_paths(git_diff: str) -> list[str]:
 
 
 def build_proposal_prompt(config: BenchmarkConfig, goal: str) -> str:
-    template = (Path(__file__).parent / "prompts" / "experiment_proposal.md").read_text(encoding="utf-8")
+    prompt_dir = Path(__file__).parent / "prompts"
+    prompt_parts = (
+        "role.md",
+        "project_rules.md",
+        "repository_context.md",
+        "research_context.md",
+        "output_contract.md",
+    )
+    template = "\n\n".join(
+        (prompt_dir / name).read_text(encoding="utf-8").strip()
+        for name in prompt_parts
+    )
     return template.format(
-        development_splits=", ".join(config.development_splits), primary_metric=config.primary_metric,
+        development_splits=", ".join(config.development_splits),
+        primary_metric=config.primary_metric,
         allowed_files="\n".join(f"- {pattern}" for pattern in ALLOWED_FILE_PATTERNS),
-        profiles=", ".join(sorted(APPROVED_PROFILES)), baseline_metrics=json.dumps(config.baseline_expected, indent=2, sort_keys=True), goal=goal,
+        profiles=", ".join(sorted(APPROVED_PROFILES)),
+        baseline_metrics=json.dumps(config.baseline_expected, indent=2, sort_keys=True),
+        goal=goal,
     )

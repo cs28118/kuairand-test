@@ -53,6 +53,8 @@ python -m agent.proposer
 
 The default research goal is stored in `agent/prompts/research_goal.md`; edit that file for repeated runs, or override it with `--goal "..."` or `--goal-file path/to/goal.md`.
 
+The supervised proposal prompt is assembled from focused Markdown sections in `agent/prompts/`: `role.md`, `project_rules.md`, `repository_context.md`, `research_context.md`, and `output_contract.md`. Edit the relevant section to refine behavior without changing the Python client.
+
 For an organization-provided OpenAI-compatible gateway, set `OPENAI_BASE_URL` to its API root (usually ending in `/v1`). The wrapper then calls `<OPENAI_BASE_URL>/responses`; leave it unset to use the public OpenAI API.
 
 Check credentials and model routing without running an experiment:
