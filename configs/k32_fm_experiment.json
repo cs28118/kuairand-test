@@ -1,0 +1,18 @@
+{
+  "hypothesis": "Increasing the FM latent dimension from k=16 to k=32 will capture additional user-item interactions and improve validation ranking metrics.",
+  "git_diff": "diff --git a/experiments/run_date_dow_fm.py b/experiments/run_date_dow_fm.py\n--- a/experiments/run_date_dow_fm.py\n+++ b/experiments/run_date_dow_fm.py\n@@ -24,7 +24,7 @@ def main() -> None:\n     encoded, dimension = encode(development)\n     x_train, y_train, _ = encoded[\"train\"]\n     x_valid, y_valid, users_valid = encoded[\"valid\"]\n-    model = FM(dimension, k=16, lr=0.001, seed=seed)\n+    model = FM(dimension, k=32, lr=0.001, seed=seed)\n     rng = np.random.default_rng(seed)\n@@ -68,7 +68,7 @@ def main() -> None:\n                 },\n-                \"metadata\": {\"elapsed_seconds\": time.perf_counter() - started, \"epochs\": epoch},\n+                \"metadata\": {\"elapsed_seconds\": time.perf_counter() - started, \"epochs\": epoch, \"model_k\": 32},\n             },\n             handle,\n",
+  "description": "Run one FM capacity experiment with k=32 and record the applied model rank in result metadata. Use only train and valid development splits.",
+  "result_compare": "Compare GAUC, nDCG@5, and primary against run-1 k=16 and run-16 k=8 results; verify result metadata reports model_k=32.",
+  "next_steps": "Keep k=32 only if primary improves beyond the observed seed variation and the metadata confirms model_k=32; otherwise retain the simpler configuration.",
+  "command": [
+    "python",
+    "experiments/run_date_dow_fm.py"
+  ],
+  "seed": 42,
+  "dependency_profile": "base",
+  "result_file": "experiment_result.json",
+  "artifacts": [],
+  "metadata": {
+    "name": "fm-k32-provenance-test"
+  }
+}

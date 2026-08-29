@@ -1,0 +1,18 @@
+{
+  "hypothesis": "Reducing the FM latent dimension from k=16 to k=8 will reduce variance and improve validation ranking metrics without changing the data pipeline.",
+  "git_diff": "diff --git a/experiments/run_date_dow_fm.py b/experiments/run_date_dow_fm.py\n--- a/experiments/run_date_dow_fm.py\n+++ b/experiments/run_date_dow_fm.py\n@@ -24,7 +24,7 @@ def main() -> None:\n     encoded, dimension = encode(development)\n     x_train, y_train, _ = encoded[\"train\"]\n     x_valid, y_valid, users_valid = encoded[\"valid\"]\n-    model = FM(dimension, k=16, lr=0.001, seed=seed)\n+    model = FM(dimension, k=8, lr=0.001, seed=seed)\n     rng = np.random.default_rng(seed)\n",
+  "description": "Run the existing FM experiment with one controlled capacity change: k=8 instead of k=16. Use only train and valid development splits.",
+  "result_compare": "Compare GAUC, nDCG@5, and primary against run-1 seed 42 and run-9 seed 43 baseline results.",
+  "next_steps": "Keep k=8 only if primary improves beyond the seed variation observed in runs 1 and 9; otherwise retain k=16.",
+  "command": [
+    "python",
+    "experiments/run_date_dow_fm.py"
+  ],
+  "seed": 42,
+  "dependency_profile": "base",
+  "result_file": "experiment_result.json",
+  "artifacts": [],
+  "metadata": {
+    "name": "fm-k8-capacity-test"
+  }
+}

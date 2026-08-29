@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 import csv
+import os
 from pathlib import Path
 import re
 import shutil
@@ -42,7 +43,10 @@ def _snapshot(root: Path) -> dict[str, str]:
     snapshot: dict[str, str] = {}
     for path in root.rglob("*"):
         if path.is_file() and "__pycache__" not in path.parts:
-            snapshot[str(path.relative_to(root))] = _file_hash(path)
+            # Diff paths are repository-style POSIX paths even on Windows.
+            # Normalize snapshots to the same representation so provenance
+            # joins the original and patched hashes correctly.
+            snapshot[path.relative_to(root).as_posix()] = _file_hash(path)
     return snapshot
 
 
@@ -85,10 +89,17 @@ class DockerWorkspace:
                 target.unlink()
         self._before = _snapshot(self.path)
         if spec.git_diff:
+            git_env = os.environ.copy()
+            # The disposable copy lives below the host repository's ignored
+            # runs/ tree. Stop Git from discovering that parent .git folder,
+            # otherwise `git apply` can target the host worktree and leave the
+            # isolated copy unchanged.
+            git_env["GIT_CEILING_DIRECTORIES"] = str(self.path.parent.resolve())
             process = subprocess.run(
-                ["git", "apply", "--recount", "--unidiff-zero", "--whitespace=nowarn", "-"],
+                ["git", "apply", "--no-index", "--recount", "--unidiff-zero", "--ignore-space-change", "--whitespace=nowarn", "-"],
                 input=spec.git_diff.encode("utf-8"),
                 cwd=self.path,
+                env=git_env,
                 capture_output=True,
                 check=False,
             )
@@ -128,6 +139,23 @@ class DockerWorkspace:
         return sorted(
             name for name in set(self._before) | set(after) if self._before.get(name) != after.get(name)
         )
+
+    def code_provenance(self, declared_paths: list[str]) -> dict[str, object]:
+        """Return before/after hashes for files declared by the proposal diff."""
+        original: dict[str, str] = {}
+        patched: dict[str, str] = {}
+        for name in declared_paths:
+            if name in self._before:
+                original[name] = self._before[name]
+            target = self.path / name
+            if target.is_file():
+                patched[name] = _file_hash(target)
+        changed = sorted(
+            name for name in set(original) | set(patched)
+            if original.get(name) != patched.get(name)
+        )
+        return {"declared_modified_files": sorted(declared_paths), "original_file_sha256": original,
+                "patched_file_sha256": patched, "changed_files": changed}
 
     def cleanup(self) -> None:
         if self.path.exists():

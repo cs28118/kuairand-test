@@ -1,0 +1,26 @@
+{
+  "hypothesis": "Reducing the FM latent dimension from k=16 to k=8 may reduce variance while preserving validation ranking quality.",
+  "git_diff": "diff --git a/experiments/run_date_dow_fm.py b/experiments/run_date_dow_fm.py\n--- a/experiments/run_date_dow_fm.py\n+++ b/experiments/run_date_dow_fm.py\n@@ -27,1 +27,1 @@\n-    model = FM(dimension, k=16, lr=0.001, seed=seed)\n+    model = FM(dimension, k=8, lr=0.001, seed=seed)\n",
+  "description": "Apply one isolated k=8 FM code change, evaluate only train/valid, and emit the instantiated rank plus a validation-best checkpoint.",
+  "result_compare": "Add this validation-only result to the cross-run summary and compare primary with all completed supervised runs.",
+  "next_steps": "Select this checkpoint only if its provenance is confirmed and it is the best validation result; do not start an autonomous loop yet.",
+  "command": [
+    "python",
+    "experiments/run_date_dow_fm.py"
+  ],
+  "seed": 42,
+  "dependency_profile": "base",
+  "result_file": "experiment_result.json",
+  "artifacts": [
+    "model.npz"
+  ],
+  "expected_provenance": {
+    "model": "fm",
+    "model_k": 8,
+    "seed": 42,
+    "development_splits": "train,valid"
+  },
+  "metadata": {
+    "name": "fm-k8-provenance-confirmed"
+  }
+}

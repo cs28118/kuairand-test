@@ -2,11 +2,13 @@ import math
 import json
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from framework.accounting import Budget, BudgetExceeded, CostLedger, TokenUsage
+from framework.comparison import _provenance_confirmed
 from framework.config import load_benchmark_config
 from framework.contracts import ExperimentResult, ExperimentSpec
 from framework.dependencies import DependencyViolation, request_profile
@@ -200,6 +202,22 @@ class FrameworkTests(unittest.TestCase):
         self.assertFalse(policy.observe(0.6005, iteration=3, elapsed_seconds=3).stop)
         self.assertTrue(policy.observe(0.6004, iteration=4, elapsed_seconds=4).stop)
 
+    def test_provenance_confirmation_requires_distinct_hashes_for_every_declared_file(self) -> None:
+        result = {
+            "status": "completed",
+            "git_diff": "diff --git a/train.py b/train.py\n",
+            "provenance": {"git_diff_sha256": "abc"},
+            "source_provenance": {
+                "declared_modified_files": ["train.py"],
+                "changed_files": ["train.py"],
+                "original_file_sha256": {"train.py": "before"},
+                "patched_file_sha256": {"train.py": "after"},
+            },
+        }
+        self.assertTrue(_provenance_confirmed(result))
+        result["source_provenance"]["patched_file_sha256"]["train.py"] = "before"
+        self.assertFalse(_provenance_confirmed(result))
+
     def test_unknown_dependency_profile_is_rejected(self) -> None:
         self.assertIn("torch", request_profile("pytorch").packages)
         with self.assertRaises(DependencyViolation):
@@ -216,6 +234,105 @@ class FrameworkTests(unittest.TestCase):
             workspace = DockerWorkspace(repo, Path(temp) / "runs")
             workspace.prepare(spec)
             self.assertFalse((workspace.path / "evaluate.py").exists())
+            workspace.cleanup()
+
+    def test_code_provenance_normalizes_windows_diff_paths(self) -> None:
+        diff = (
+            "diff --git a/experiments/sample.py b/experiments/sample.py\n"
+            "--- a/experiments/sample.py\n"
+            "+++ b/experiments/sample.py\n"
+            "@@ -1,1 +1,1 @@\n"
+            "-VALUE = 1\n"
+            "+VALUE = 2\n"
+        )
+        spec = ExperimentSpec("h", diff, "d", "r", "n", ("python", "experiments/sample.py"), 1)
+        with tempfile.TemporaryDirectory() as temp:
+            repo = Path(temp) / "repo"
+            (repo / "configs").mkdir(parents=True)
+            (repo / "configs" / "official_files.json").write_text('{"sha256": {}}')
+            (repo / "experiments").mkdir()
+            (repo / "experiments" / "sample.py").write_text("VALUE = 1\n")
+            workspace = DockerWorkspace(repo, Path(temp) / "runs")
+            workspace.prepare(spec)
+            provenance = workspace.code_provenance(["experiments/sample.py"])
+            self.assertIn("experiments/sample.py", provenance["original_file_sha256"])
+            self.assertIn("experiments/sample.py", provenance["patched_file_sha256"])
+            self.assertEqual(provenance["changed_files"], ["experiments/sample.py"])
+            workspace.cleanup()
+
+    def test_docker_workspace_applies_lf_patch_to_crlf_source(self) -> None:
+        diff = (
+            "diff --git a/experiments/sample.py b/experiments/sample.py\n"
+            "--- a/experiments/sample.py\n"
+            "+++ b/experiments/sample.py\n"
+            "@@ -1,1 +1,1 @@\n"
+            "-VALUE = 1\n"
+            "+VALUE = 2\n"
+        )
+        spec = ExperimentSpec("h", diff, "d", "r", "n", ("python", "experiments/sample.py"), 1)
+        with tempfile.TemporaryDirectory() as temp:
+            repo = Path(temp) / "repo"
+            (repo / "configs").mkdir(parents=True)
+            (repo / "configs" / "official_files.json").write_text('{"sha256": {}}')
+            (repo / "experiments").mkdir()
+            (repo / "experiments" / "sample.py").write_bytes(b"VALUE = 1\r\n")
+            workspace = DockerWorkspace(repo, Path(temp) / "runs")
+            workspace.prepare(spec)
+            provenance = workspace.code_provenance(["experiments/sample.py"])
+            self.assertEqual(provenance["changed_files"], ["experiments/sample.py"])
+            self.assertIn(b"VALUE = 2", (workspace.path / "experiments" / "sample.py").read_bytes())
+            workspace.cleanup()
+
+    def test_docker_workspace_applies_the_fm_capacity_patch(self) -> None:
+        diff = (
+            "diff --git a/experiments/run_date_dow_fm.py b/experiments/run_date_dow_fm.py\n"
+            "--- a/experiments/run_date_dow_fm.py\n"
+            "+++ b/experiments/run_date_dow_fm.py\n"
+            "@@ -24,5 +24,5 @@\n"
+            "     encoded, dimension = encode(development)\n"
+            "     x_train, y_train, _ = encoded[\"train\"]\n"
+            "     x_valid, y_valid, users_valid = encoded[\"valid\"]\n"
+            "-    model = FM(dimension, k=16, lr=0.001, seed=seed)\n"
+            "+    model = FM(dimension, k=8, lr=0.001, seed=seed)\n"
+            "     rng = np.random.default_rng(seed)\n"
+        )
+        spec = ExperimentSpec("h", diff, "d", "r", "n", ("python", "experiments/run_date_dow_fm.py"), 1)
+        with tempfile.TemporaryDirectory() as temp:
+            repo = Path(temp) / "repo"
+            (repo / "configs").mkdir(parents=True)
+            (repo / "configs" / "official_files.json").write_text('{"sha256": {}}')
+            (repo / "experiments").mkdir()
+            source = Path(__file__).resolve().parents[1] / "experiments" / "run_date_dow_fm.py"
+            (repo / "experiments" / "run_date_dow_fm.py").write_bytes(source.read_bytes())
+            workspace = DockerWorkspace(repo, Path(temp) / "runs")
+            workspace.prepare(spec)
+            provenance = workspace.code_provenance(["experiments/run_date_dow_fm.py"])
+            self.assertEqual(provenance["changed_files"], ["experiments/run_date_dow_fm.py"])
+            self.assertIn(b"k=8", (workspace.path / "experiments" / "run_date_dow_fm.py").read_bytes())
+            workspace.cleanup()
+
+    def test_nested_workspace_applies_patch_inside_copy_not_parent_git_repo(self) -> None:
+        diff = (
+            "diff --git a/experiments/sample.py b/experiments/sample.py\n"
+            "--- a/experiments/sample.py\n"
+            "+++ b/experiments/sample.py\n"
+            "@@ -1,1 +1,1 @@\n"
+            "-VALUE = 1\n"
+            "+VALUE = 2\n"
+        )
+        spec = ExperimentSpec("h", diff, "d", "r", "n", ("python", "experiments/sample.py"), 1)
+        with tempfile.TemporaryDirectory() as temp:
+            repo = Path(temp) / "repo"
+            (repo / "configs").mkdir(parents=True)
+            (repo / "configs" / "official_files.json").write_text('{"sha256": {}}')
+            (repo / "experiments").mkdir()
+            host_source = repo / "experiments" / "sample.py"
+            host_source.write_text("VALUE = 1\n")
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            workspace = DockerWorkspace(repo, repo / "runs" / "iter_001" / "isolation")
+            workspace.prepare(spec)
+            self.assertEqual(host_source.read_text(), "VALUE = 1\n")
+            self.assertEqual((workspace.path / "experiments" / "sample.py").read_text(), "VALUE = 2\n")
             workspace.cleanup()
 
     def test_docker_is_required_for_execution(self) -> None:

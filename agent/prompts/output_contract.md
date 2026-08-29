@@ -8,7 +8,7 @@ The object must contain exactly these top-level keys:
 
 JSON rules:
 - Use strict JSON: double quotes, no comments, no trailing commas, and no duplicate keys.
-- Do not put literal line breaks inside a JSON string. Encode patch line breaks as the two characters `\\n`.
+- Do not put literal line breaks inside a JSON string. Encode patch line breaks with the single JSON escape `\n` (one backslash followed by `n`); never emit `\\n`. Encode each patch line break this way.
 - All review fields, including `git_diff`, `result_compare`, and `next_steps`, are strings. `command` and `artifacts` are arrays of strings. `metadata` is {{"name":"short-name"}}.
 - `result_compare must be a plain string`; `next_steps` must also be a plain
   string. Neither field may be an object or array.
@@ -25,8 +25,8 @@ Metric names in comparisons must be the repository names `GAUC`, `nDCG@5`, and
 
 Final self-check before emitting the object:
 - The first non-whitespace character is `{{` and the last is `}}`.
-- Every string is on one logical JSON line; all embedded newlines are encoded as
-  `\\n`, and all embedded quotes are escaped.
+- Every string is on one logical JSON line; all embedded newlines use the single
+  JSON escape `\n`, and all embedded quotes are escaped.
 - The object has exactly the eleven keys listed above, with no schema keywords
   such as `properties`, `additionalProperties`, or `required`.
 - `result_compare` and `next_steps` are plain JSON strings, never objects or

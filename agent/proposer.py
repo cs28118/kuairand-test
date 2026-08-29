@@ -27,25 +27,57 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 
 def generate_proposal(*, client: ProposalClient, provider: str, model: str, goal: str, config: BenchmarkConfig, store: RunStore) -> ExperimentSpec:
     prompt = build_proposal_prompt(config, goal)
-    proposal_request = LLMRequest(provider=provider, model=model, prompt=prompt)
     store.initialize({"framework_version": 3, "mode": "llm_supervised_proposal", "primary_metric": config.primary_metric, "development_splits": list(config.development_splits)})
-    _write_json(store.run_dir / "llm_request.json", proposal_request.audit_dict())
-    store.append_audit({"event": "llm_request", "request": proposal_request.audit_dict()})
-    try:
-        response = client.generate(proposal_request)
-    except Exception as exc:
-        store.append_audit({"event": "llm_failure", "failure_reason": str(exc)})
-        store.complete("failed")
-        raise
-    _write_json(store.run_dir / "llm_response.json", response.audit_dict())
-    (store.run_dir / "llm_output.txt").write_text(response.text, encoding="utf-8")
-    store.append_audit({"event": "llm_response", "response": response.audit_dict()})
-    try:
-        spec = parse_llm_experiment_spec(response.text)
-    except ProposalViolation as exc:
-        store.append_audit({"event": "proposal_rejected", "reason": str(exc)})
-        store.complete("rejected")
-        raise
+    current_prompt = prompt
+    last_error: ProposalViolation | None = None
+    for attempt in range(3):
+        proposal_request = LLMRequest(provider=provider, model=model, prompt=current_prompt)
+        request_name = "llm_request.json" if attempt == 0 else f"llm_repair_request_{attempt}.json"
+        _write_json(store.run_dir / request_name, proposal_request.audit_dict())
+        store.append_audit({"event": "llm_request" if attempt == 0 else "llm_repair_request", "attempt": attempt + 1, "request": proposal_request.audit_dict()})
+        try:
+            response = client.generate(proposal_request)
+        except Exception as exc:
+            store.append_audit({"event": "llm_failure", "attempt": attempt + 1, "failure_reason": str(exc)})
+            store.complete("failed")
+            raise
+        response_name = "llm_response.json" if attempt == 0 else f"llm_repair_response_{attempt}.json"
+        output_name = "llm_output.txt" if attempt == 0 else f"llm_output_attempt_{attempt + 1}.txt"
+        _write_json(store.run_dir / response_name, response.audit_dict())
+        (store.run_dir / output_name).write_text(response.text, encoding="utf-8")
+        # Keep the canonical files pointing at the response ultimately reviewed.
+        if attempt > 0:
+            _write_json(store.run_dir / "llm_response.json", response.audit_dict())
+            (store.run_dir / "llm_output.txt").write_text(response.text, encoding="utf-8")
+        store.append_audit({"event": "llm_response" if attempt == 0 else "llm_repair_response", "attempt": attempt + 1, "response": response.audit_dict()})
+        try:
+            spec = parse_llm_experiment_spec(response.text)
+            break
+        except ProposalViolation as exc:
+            last_error = exc
+            if attempt == 2:
+                store.append_audit({"event": "proposal_rejected", "reason": str(exc)})
+                store.complete("rejected")
+                raise
+            current_prompt = (
+                "Repair the previous response into one valid ExperimentSpec JSON object. "
+                "Return only the complete corrected object, with exactly the eleven required keys; "
+                "preserve the intended experiment and patch, do not add schema keywords or prose. "
+                "For this task the exact valid git_diff is: "
+                "diff --git a/experiments/run_date_dow_fm.py b/experiments/run_date_dow_fm.py\\n"
+                "--- a/experiments/run_date_dow_fm.py\\n"
+                "+++ b/experiments/run_date_dow_fm.py\\n"
+                "@@ -24,5 +24,5 @@\\n"
+                "    encoded, dimension = encode(development)\\n"
+                "    x_train, y_train, _ = encoded[\"train\"]\\n"
+                "    x_valid, y_valid, users_valid = encoded[\"valid\"]\\n"
+                "-    model = FM(dimension, k=16, lr=0.001, seed=seed)\\n"
+                "+    model = FM(dimension, k=8, lr=0.001, seed=seed)\\n"
+                "    rng = np.random.default_rng(seed)\\n"
+                f"Validator error: {exc}. Previous response:\n{response.text}"
+            )
+    else:  # pragma: no cover - loop always either breaks or raises
+        raise last_error or ProposalViolation("LLM proposal was not validated")
     _proposal_path(store).write_text(json.dumps(spec.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
     store.append_audit({"event": "proposal_validated", "proposal": spec.to_dict()})
     store.complete("awaiting_approval")

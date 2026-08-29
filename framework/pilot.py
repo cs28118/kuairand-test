@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -60,6 +61,10 @@ def _copy_artifacts(workspace: Path, output_dir: Path, names: list[str]) -> list
     return copied
 
 
+def _diff_sha256(git_diff: str) -> str:
+    return hashlib.sha256(git_diff.encode("utf-8")).hexdigest()
+
+
 def _failure(status: str, reason: str, *, modified_files: list[str] | None = None) -> ExperimentResult:
     return ExperimentResult(
         status=status,
@@ -107,6 +112,7 @@ def run_pilot(
     workspace = DockerWorkspace(repo_root, artifact_dir / "isolation")
     outcome: ExecutionOutcome | None = None
     prepared_modified: list[str] = diff_paths(spec.git_diff)
+    source_provenance: dict[str, Any] = {}
     result = _attach_instruction(_failure("failed", "experiment did not start"), spec)
     try:
         existing = run_store.read_state().get("usage", {})
@@ -121,6 +127,14 @@ def run_pilot(
         )
         ledger.require_capacity()
         workspace.prepare(spec)
+        source_provenance = workspace.code_provenance(prepared_modified)
+        (artifact_dir / "code_provenance.json").write_text(
+            json.dumps({"git_diff_sha256": _diff_sha256(spec.git_diff), **source_provenance}, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        if spec.git_diff and set(prepared_modified) - set(source_provenance["changed_files"]):
+            unchanged = sorted(set(prepared_modified) - set(source_provenance["changed_files"]))
+            raise IsolationError("git diff did not alter its declared source file(s): " + ", ".join(unchanged))
         prepared_modified = sorted(set(prepared_modified) | set(workspace.modified_files()))
         execution = config.execution
         executor = DockerExecutor(
@@ -155,8 +169,20 @@ def run_pilot(
             if result.status == "completed" and config.primary_metric not in result.metrics:
                 result.status = "failed"
                 result.failure_reason = f"result is missing required metric: {config.primary_metric}"
+            missing_artifacts = [
+                name for name in spec.artifacts
+                if not (workspace.path / name).is_file()
+            ]
+            if result.status == "completed" and missing_artifacts:
+                result.status = "failed"
+                result.failure_reason = "experiment did not produce declared artifacts: " + ", ".join(missing_artifacts)
 
         result = _attach_instruction(result, spec)
+        result.source_provenance = source_provenance
+        result.provenance = {
+            "git_diff_sha256": _diff_sha256(spec.git_diff),
+            "changed_files": source_provenance.get("changed_files", []),
+        }
         usage = _usage(result.token_usage)
         result.token_usage = usage.to_dict()
         try:
@@ -195,6 +221,11 @@ def run_pilot(
     except (IsolationError, GuardrailViolation, OSError, ValueError) as exc:
         modified = workspace.modified_files() if workspace.path.exists() else []
         result = _attach_instruction(_failure("failed", str(exc), modified_files=modified), spec)
+        result.source_provenance = source_provenance
+        result.provenance = {
+            "git_diff_sha256": _diff_sha256(spec.git_diff),
+            "changed_files": source_provenance.get("changed_files", []),
+        }
         (artifact_dir / "stderr.txt").write_text(str(exc) + "\n", encoding="utf-8")
         result.stderr = str(artifact_dir / "stderr.txt")
     finally:
@@ -211,7 +242,9 @@ def run_pilot(
                 "failure_reason": result.failure_reason,
                 "stdout": result.stdout,
                 "stderr": result.stderr,
-                "recovery_attempts": [],
+            "recovery_attempts": [],
+                "provenance": result.provenance,
+                "source_provenance": result.source_provenance,
             }
         )
         workspace.cleanup()

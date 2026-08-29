@@ -78,6 +78,11 @@ def parse_llm_experiment_spec(raw_response: str) -> ExperimentSpec:
         raise ProposalViolation("invalid ExperimentSpec schema; " + "; ".join(details))
     if not isinstance(raw["command"], list) or not isinstance(raw["artifacts"], list):
         raise ProposalViolation("command and artifacts must be JSON arrays")
+    # A unified diff conventionally ends with a newline. Some otherwise
+    # correct models omit only that final terminator; restore it before the
+    # strict git applicability check without changing any patch content.
+    if isinstance(raw.get("git_diff"), str) and raw["git_diff"] and not raw["git_diff"].endswith("\n"):
+        raw["git_diff"] += "\n"
     if not isinstance(raw["metadata"], dict) or set(raw["metadata"]) != {"name"}:
         raise ProposalViolation("metadata must contain only a non-empty name")
     if type(raw["seed"]) is not int:
@@ -131,7 +136,7 @@ def _validated_diff_paths(git_diff: str) -> list[str]:
     if not targets:
         raise ProposalViolation("non-empty git diff must contain ordinary diff --git file headers")
     check = subprocess.run(
-        ["git", "apply", "--check", "--recount", "--unidiff-zero", "--whitespace=nowarn", "-"],
+        ["git", "apply", "--no-index", "--check", "--recount", "--unidiff-zero", "--ignore-space-change", "--whitespace=nowarn", "-"],
         cwd=REPO_ROOT,
         input=git_diff.encode("utf-8"),
         capture_output=True,

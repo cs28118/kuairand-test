@@ -127,6 +127,8 @@ class ExperimentResult:
     description: str = ""
     command: list[str] = field(default_factory=list)
     seed: int | None = None
+    provenance: dict[str, Any] = field(default_factory=dict)
+    source_provenance: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.status not in ALLOWED_STATUSES:
@@ -158,6 +160,8 @@ class ExperimentResult:
             description=str(raw.get("description", "")),
             command=list(raw.get("command", [])),
             seed=raw.get("seed"),
+            provenance=dict(raw.get("provenance", {})),
+            source_provenance=dict(raw.get("source_provenance", {})),
         )
 
     def to_dict(self) -> dict[str, Any]:
