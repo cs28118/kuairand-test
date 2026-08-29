@@ -1,9 +1,4 @@
-"""Validation and prompt construction for one LLM-proposed experiment.
-
-This module deliberately contains no iteration policy.  It turns one model
-response into a reviewable :class:`ExperimentSpec`, or rejects it before a
-Docker workspace is ever created.
-"""
+"""Prompt construction and safety validation for LLM experiment proposals."""
 from __future__ import annotations
 
 import json
@@ -11,35 +6,17 @@ from pathlib import Path
 import re
 from typing import Any
 
-from .config import BenchmarkConfig
-from .contracts import ExperimentSpec
-from .dependencies import APPROVED_PROFILES
-from .guardrails import GuardrailViolation, reject_protected_paths
-from .isolation import diff_paths
+from framework.config import BenchmarkConfig
+from framework.contracts import ExperimentSpec
+from framework.dependencies import APPROVED_PROFILES
+from framework.guardrails import GuardrailViolation, reject_protected_paths
+from framework.isolation import diff_paths
 
 
-# A proposal may change an experiment implementation or these small baseline
-# helpers.  It never needs the evaluator, submission code, framework, data,
-# credentials, or Docker configuration.
-ALLOWED_FILE_PATTERNS = (
-    "ablation_features.py",
-    "baseline.py",
-    "data.py",
-    "experiments/*.py",
-)
-
+ALLOWED_FILE_PATTERNS = ("ablation_features.py", "baseline.py", "data.py", "experiments/*.py")
 _SPEC_KEYS = {
-    "hypothesis",
-    "git_diff",
-    "description",
-    "result_compare",
-    "next_steps",
-    "command",
-    "seed",
-    "dependency_profile",
-    "result_file",
-    "artifacts",
-    "metadata",
+    "hypothesis", "git_diff", "description", "result_compare", "next_steps", "command", "seed",
+    "dependency_profile", "result_file", "artifacts", "metadata",
 }
 
 
@@ -48,14 +25,9 @@ class ProposalViolation(ValueError):
 
 
 def experiment_spec_schema() -> dict[str, Any]:
-    """Return the JSON Schema supplied to providers that support structured output."""
     return {
-        "type": "object",
-        "additionalProperties": False,
-        "required": [
-            "hypothesis", "git_diff", "description", "result_compare", "next_steps",
-            "command", "seed", "dependency_profile", "result_file", "artifacts", "metadata",
-        ],
+        "type": "object", "additionalProperties": False,
+        "required": ["hypothesis", "git_diff", "description", "result_compare", "next_steps", "command", "seed", "dependency_profile", "result_file", "artifacts", "metadata"],
         "properties": {
             "hypothesis": {"type": "string", "minLength": 1},
             "git_diff": {"type": "string"},
@@ -67,12 +39,7 @@ def experiment_spec_schema() -> dict[str, Any]:
             "dependency_profile": {"type": "string"},
             "result_file": {"type": "string", "minLength": 1},
             "artifacts": {"type": "array", "items": {"type": "string"}},
-            "metadata": {
-                "type": "object",
-                "additionalProperties": False,
-                "required": ["name"],
-                "properties": {"name": {"type": "string", "minLength": 1}},
-            },
+            "metadata": {"type": "object", "additionalProperties": False, "required": ["name"], "properties": {"name": {"type": "string", "minLength": 1}}},
         },
     }
 
@@ -81,17 +48,15 @@ def _is_allowed_file(path: str) -> bool:
     candidate = Path(path.replace("\\", "/"))
     if candidate.is_absolute() or ".." in candidate.parts:
         return False
-    normalized = candidate.as_posix()
-    return any(candidate.match(pattern) for pattern in ALLOWED_FILE_PATTERNS) and normalized != ""
+    return bool(candidate.as_posix()) and any(candidate.match(pattern) for pattern in ALLOWED_FILE_PATTERNS)
 
 
 def _parse_json_object(raw_response: str) -> dict[str, Any]:
     if not isinstance(raw_response, str):
         raise ProposalViolation("LLM response must be text containing an ExperimentSpec JSON object")
-    decoder = json.JSONDecoder()
     stripped = raw_response.strip()
     try:
-        value, consumed = decoder.raw_decode(stripped)
+        value, consumed = json.JSONDecoder().raw_decode(stripped)
     except json.JSONDecodeError as exc:
         raise ProposalViolation(f"LLM response is not valid JSON: {exc.msg}") from exc
     if consumed != len(stripped) or not isinstance(value, dict):
@@ -100,7 +65,6 @@ def _parse_json_object(raw_response: str) -> dict[str, Any]:
 
 
 def parse_llm_experiment_spec(raw_response: str) -> ExperimentSpec:
-    """Parse exact JSON, reject unknown keys, then validate command/path policy."""
     raw = _parse_json_object(raw_response)
     unknown = set(raw) - _SPEC_KEYS
     missing = _SPEC_KEYS - set(raw)
@@ -126,7 +90,6 @@ def parse_llm_experiment_spec(raw_response: str) -> ExperimentSpec:
 
 
 def validate_safe_spec(spec: ExperimentSpec) -> None:
-    """Enforce the narrow execution and modification policy for LLM proposals."""
     command = list(spec.command)
     if command[0] not in {"python", "python3"}:
         raise ProposalViolation("command must start with python or python3")
@@ -136,10 +99,8 @@ def validate_safe_spec(spec: ExperimentSpec) -> None:
         raise ProposalViolation("command arguments may not contain control characters")
     if spec.dependency_profile not in APPROVED_PROFILES:
         raise ProposalViolation(f"dependency profile is not approved: {spec.dependency_profile}")
-
     if set(spec.metadata) != {"name"} or not isinstance(spec.metadata["name"], str) or not spec.metadata["name"].strip():
         raise ProposalViolation("metadata must contain only a non-empty name")
-
     changed = _validated_diff_paths(spec.git_diff)
     for path in changed:
         if not _is_allowed_file(path):
@@ -151,7 +112,6 @@ def validate_safe_spec(spec: ExperimentSpec) -> None:
 
 
 def _validated_diff_paths(git_diff: str) -> list[str]:
-    """Accept only ordinary text patches with explicit, allowed file headers."""
     if not git_diff:
         return []
     if any(marker in git_diff for marker in ("new file mode 120000", "rename from ", "rename to ", "Binary files ")):
@@ -166,42 +126,13 @@ def _validated_diff_paths(git_diff: str) -> list[str]:
         targets.extend(match.groups())
     if not targets:
         raise ProposalViolation("non-empty git diff must contain ordinary diff --git file headers")
-    # Inspect both the diff header and +++/--- lines.  The latter protects
-    # against a header/body mismatch that git apply might otherwise accept.
     return sorted(set(targets) | set(diff_paths(git_diff)))
 
 
 def build_proposal_prompt(config: BenchmarkConfig, goal: str) -> str:
-    """Build the complete, reviewable prompt used for exactly one proposal."""
-    baseline_metrics = json.dumps(config.baseline_expected, indent=2, sort_keys=True)
-    allowed_files = "\n".join(f"- {pattern}" for pattern in ALLOWED_FILE_PATTERNS)
-    profiles = ", ".join(sorted(APPROVED_PROFILES))
-    return f"""You are proposing exactly one small, validation-only KuaiRand experiment.
-
-Project rules:
-- Use only the development splits: {', '.join(config.development_splits)}. Never use hidden test data.
-- Never modify, import, or execute evaluate.py. It is a protected judge file and is absent from Docker.
-- Do not modify framework code, Docker files, dependency manifests, credentials, submissions, or dataset files.
-- The Docker container has no network. Do not download packages or invoke a shell, package manager, or subprocess launcher.
-- Use an argv command beginning with `python` or `python3`, followed by one allowed relative .py file. Never use `-c`, `-m`, a shell, or an inline script.
-- The experiment must write `experiment_result.json` with `status`, numeric `metrics` including `{config.primary_metric}`, and any artifacts it declares.
-- Propose a small, complete, reviewable unified git diff. An empty diff is allowed when an existing experiment script is sufficient; if you cannot write a complete `diff --git ...` patch, use `git_diff: ""` and run an existing script such as `experiments/run_date_dow_fm.py`. Never emit a partial or pseudo-diff.
-
-Allowed files to modify or execute:
-{allowed_files}
-
-Approved dependency profiles: {profiles}
-Baseline validation metrics:
-{baseline_metrics}
-
-Requested research goal:
-{goal}
-
-Output a DATA INSTANCE, not a schema. Return ONLY one JSON object with exactly these top-level keys:
-`hypothesis`, `git_diff`, `description`, `result_compare`, `next_steps`, `command`, `seed`, `dependency_profile`, `result_file`, `artifacts`, `metadata`.
-All five review fields (`hypothesis`, `description`, `result_compare`, and `next_steps`, plus the change description) are strings. `command` and `artifacts` are arrays of strings; `metadata` is {{"name": "short-name"}}. In particular, `result_compare` must be a plain string, never an object or array.
-Do not output schema keywords such as `properties`, `additionalProperties`, or `required`. Do not wrap the JSON in Markdown, a code fence, or explanation.
-
-Valid shape example (replace every example value with your proposal):
-{{"hypothesis":"one testable idea","git_diff":"","description":"run one validation experiment","result_compare":"Compare primary with FM baseline 0.6016","next_steps":"Keep only if primary improves","command":["python","experiments/example.py"],"seed":42,"dependency_profile":"base","result_file":"experiment_result.json","artifacts":[],"metadata":{{"name":"one-experiment"}}}}
-"""
+    template = (Path(__file__).parent / "prompts" / "experiment_proposal.md").read_text(encoding="utf-8")
+    return template.format(
+        development_splits=", ".join(config.development_splits), primary_metric=config.primary_metric,
+        allowed_files="\n".join(f"- {pattern}" for pattern in ALLOWED_FILE_PATTERNS),
+        profiles=", ".join(sorted(APPROVED_PROFILES)), baseline_metrics=json.dumps(config.baseline_expected, indent=2, sort_keys=True), goal=goal,
+    )

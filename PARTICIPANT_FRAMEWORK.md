@@ -48,17 +48,24 @@ Each run writes state, append-only iteration records, metrics, and (for FM) a va
 Set a provider credential and a pinned model in your terminal environment or a local, Git-ignored `.env` file. The framework launcher loads the project-local `.env` automatically, while process environment variables take precedence. Then request one proposal:
 
 ```bash
-python -m framework.propose --goal "Test one small pairwise-ranking hypothesis on validation data."
+python -m agent.proposer --goal "Test one small pairwise-ranking hypothesis on validation data."
 ```
 
 For an organization-provided OpenAI-compatible gateway, set `OPENAI_BASE_URL` to its API root (usually ending in `/v1`). The wrapper then calls `<OPENAI_BASE_URL>/responses`; leave it unset to use the public OpenAI API.
+
+Check credentials and model routing without running an experiment:
+
+```bash
+python -m agent.check_connection
+python -m agent.check_connection --probe  # also sends one minimal Responses request
+```
 
 The wrapper sends a structured prompt containing the project rules, validation baselines, allowed files, result contract, and strict `ExperimentSpec` JSON schema. It rejects non-JSON responses, unknown schema fields, non-Python commands, unsafe paths, unapproved dependency profiles, and any attempt to modify a protected or non-allowed file.
 
 The command prints a run ID and writes `runs/<run-id>/proposal.json`. Inspect that file before approving it:
 
 ```bash
-python -m framework.propose --approve-run run-1 --approval-note "Reviewed command and patch."
+python -m agent.proposer --approve-run run-1 --approval-note "Reviewed command and patch."
 ```
 
 Approval is an explicit second command. Only this command passes the saved spec to `framework.pilot`; the Docker pilot keeps its network, resource, file, and evaluator protections. `audit.jsonl` records the complete LLM request, raw response, validation decision, human approval, and final result.
@@ -87,7 +94,7 @@ The command runs in Docker with no network, bounded memory/CPU/processes, and a 
 Run it with:
 
 ```bash
-python -m framework.pilot --spec experiment.json --baseline-primary 0.6016
+python -m framework.pilot --spec path/to/approved-spec.json --baseline-primary 0.6016
 ```
 
 Token and cost fields are supported in the result contract but intentionally have no configured prices or limits yet. Approved dependency profiles are declarations only; the framework never installs arbitrary packages.

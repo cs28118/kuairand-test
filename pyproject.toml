@@ -14,4 +14,7 @@ dev = ["pytest>=8"]
 ml = ["torch"]
 
 [tool.setuptools]
-packages = ["framework"]
+packages = ["framework", "agent"]
+
+[tool.setuptools.package-data]
+agent = ["prompts/*.md"]

@@ -12,10 +12,10 @@ from framework.contracts import ExperimentResult, ExperimentSpec
 from framework.dependencies import DependencyViolation, request_profile
 from framework.guardrails import GuardrailViolation, reject_protected_paths, validate_scores, verify_official_files
 from framework.isolation import DockerExecutor, DockerWorkspace, IsolationError
-from framework.llm import LLMRequest, LLMResponse, OpenAIResponsesClient, load_dotenv
+from agent.llm import LLMRequest, LLMResponse, OpenAIResponsesClient, load_dotenv
 from framework.pilot import run_pilot
-from framework.proposal import ProposalViolation, build_proposal_prompt, parse_llm_experiment_spec
-from framework.propose import approve_and_run, generate_proposal
+from agent.proposal import ProposalViolation, build_proposal_prompt, parse_llm_experiment_spec
+from agent.proposer import approve_and_run, generate_proposal
 from framework.state import RunStore, make_run_id
 from framework.stopping import StoppingPolicy
 
@@ -163,7 +163,7 @@ class FrameworkTests(unittest.TestCase):
             store.initialize({"mode": "llm_supervised_proposal"})
             (store.run_dir / "proposal.json").write_text(self._llm_spec(), encoding="utf-8")
             result = ExperimentResult(status="completed", metrics={"primary": 0.61})
-            with patch("framework.propose.run_pilot", return_value=result) as pilot:
+            with patch("agent.proposer.run_pilot", return_value=result) as pilot:
                 actual = approve_and_run(
                     store=store, config=load_benchmark_config(), approval_note="reviewed", baseline_primary=0.60,
                 )

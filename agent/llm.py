@@ -1,4 +1,4 @@
-"""Small provider wrapper for structured, auditable proposal generation."""
+"""Provider wrapper for structured, auditable proposal generation."""
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
@@ -17,12 +17,7 @@ class LLMError(RuntimeError):
 
 
 def load_dotenv(path: str | os.PathLike[str] | None = None) -> None:
-    """Load simple KEY=VALUE entries without adding a dotenv dependency.
-
-    Existing process variables always win.  This intentionally supports only
-    the small, local configuration file used by the framework; it does not
-    execute shell syntax or expand values.
-    """
+    """Load simple KEY=VALUE entries without adding a dotenv dependency."""
     dotenv_path = Path(path) if path is not None else Path(__file__).resolve().parents[1] / ".env"
     if not dotenv_path.is_file():
         return
@@ -92,8 +87,7 @@ class OpenAIResponsesClient:
         }
 
     def generate(self, proposal_request: LLMRequest) -> LLMResponse:
-        payload = self._payload(proposal_request)
-        encoded = json.dumps(payload).encode("utf-8")
+        encoded = json.dumps(self._payload(proposal_request)).encode("utf-8")
         http_request = request.Request(
             self.endpoint,
             data=encoded,
