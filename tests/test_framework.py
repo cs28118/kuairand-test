@@ -103,6 +103,10 @@ class FrameworkTests(unittest.TestCase):
         self.assertIn("experiments/*.py", prompt)
         self.assertIn('"primary": 0.6016', prompt)
         self.assertIn("Return ONLY one JSON object", prompt)
+        self.assertIn("DATA INSTANCE, not a schema", prompt)
+        self.assertIn("Never use `-c`", prompt)
+        self.assertIn("result_compare must be a plain string", prompt)
+        self.assertIn("Never emit a partial or pseudo-diff", prompt)
 
     def test_llm_proposal_rejects_non_json_unsafe_commands_and_paths(self) -> None:
         with self.assertRaises(ProposalViolation):
