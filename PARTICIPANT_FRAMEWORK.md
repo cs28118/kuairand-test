@@ -48,8 +48,10 @@ Each run writes state, append-only iteration records, metrics, and (for FM) a va
 Set a provider credential and a pinned model in your terminal environment or a local, Git-ignored `.env` file. The framework launcher loads the project-local `.env` automatically, while process environment variables take precedence. Then request one proposal:
 
 ```bash
-python -m agent.proposer --goal "Test one small pairwise-ranking hypothesis on validation data."
+python -m agent.proposer
 ```
+
+The default research goal is stored in `agent/prompts/research_goal.md`; edit that file for repeated runs, or override it with `--goal "..."` or `--goal-file path/to/goal.md`.
 
 For an organization-provided OpenAI-compatible gateway, set `OPENAI_BASE_URL` to its API root (usually ending in `/v1`). The wrapper then calls `<OPENAI_BASE_URL>/responses`; leave it unset to use the public OpenAI API.
 
@@ -62,13 +64,15 @@ python -m agent.check_connection --probe  # also sends one minimal Responses req
 
 The wrapper sends a structured prompt containing the project rules, validation baselines, allowed files, result contract, and strict `ExperimentSpec` JSON schema. It rejects non-JSON responses, unknown schema fields, non-Python commands, unsafe paths, unapproved dependency profiles, and any attempt to modify a protected or non-allowed file.
 
-The command prints a run ID and writes `runs/<run-id>/proposal.json`. Inspect that file before approving it:
+The command prints a run ID and writes `runs/<run-id>/proposal.json`. The exact LLM request and response are also saved as `llm_request.json`, `llm_response.json`, and plain-text `llm_output.txt` in the same run directory. Inspect the proposal and output before approving it:
 
 ```bash
 python -m agent.proposer --approve-run run-1 --approval-note "Reviewed command and patch."
 ```
 
 Approval is an explicit second command. Only this command passes the saved spec to `framework.pilot`; the Docker pilot keeps its network, resource, file, and evaluator protections. `audit.jsonl` records the complete LLM request, raw response, validation decision, human approval, and final result.
+
+The LLM does not write Python files directly into the repository. Code is represented by the proposal's `git_diff`, applied only inside the disposable Docker workspace, and removed when the pilot finishes. To retain a generated file, it must be declared as an artifact and copied into the run directory by the pilot.
 
 ## Supervised pilot
 

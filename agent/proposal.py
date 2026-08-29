@@ -4,9 +4,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
+import subprocess
 from typing import Any
 
-from framework.config import BenchmarkConfig
+from framework.config import BenchmarkConfig, REPO_ROOT
 from framework.contracts import ExperimentSpec
 from framework.dependencies import APPROVED_PROFILES
 from framework.guardrails import GuardrailViolation, reject_protected_paths
@@ -91,8 +92,8 @@ def parse_llm_experiment_spec(raw_response: str) -> ExperimentSpec:
 
 def validate_safe_spec(spec: ExperimentSpec) -> None:
     command = list(spec.command)
-    if command[0] not in {"python", "python3"}:
-        raise ProposalViolation("command must start with python or python3")
+    if command[0] not in {"python"}:
+        raise ProposalViolation("command must start with python")
     if len(command) < 2 or not command[1].endswith(".py") or not _is_allowed_file(command[1]):
         raise ProposalViolation("command must run an allowed relative .py experiment file")
     if any("\x00" in part or "\n" in part or "\r" in part for part in command):
@@ -102,6 +103,9 @@ def validate_safe_spec(spec: ExperimentSpec) -> None:
     if set(spec.metadata) != {"name"} or not isinstance(spec.metadata["name"], str) or not spec.metadata["name"].strip():
         raise ProposalViolation("metadata must contain only a non-empty name")
     changed = _validated_diff_paths(spec.git_diff)
+    command_path = Path(command[1])
+    if not (REPO_ROOT / command_path).is_file() and command[1].replace("\\", "/") not in changed:
+        raise ProposalViolation(f"command target does not exist and is not created by git_diff: {command[1]}")
     for path in changed:
         if not _is_allowed_file(path):
             raise ProposalViolation(f"git diff targets a file outside the allowed list: {path}")
@@ -126,6 +130,16 @@ def _validated_diff_paths(git_diff: str) -> list[str]:
         targets.extend(match.groups())
     if not targets:
         raise ProposalViolation("non-empty git diff must contain ordinary diff --git file headers")
+    check = subprocess.run(
+        ["git", "apply", "--check", "--recount", "--unidiff-zero", "--whitespace=nowarn", "-"],
+        cwd=REPO_ROOT,
+        input=git_diff.encode("utf-8"),
+        capture_output=True,
+        check=False,
+    )
+    if check.returncode != 0:
+        detail = check.stderr.decode("utf-8", errors="replace").strip()[:300]
+        raise ProposalViolation(f"git diff cannot be applied cleanly: {detail or 'git apply check failed'}")
     return sorted(set(targets) | set(diff_paths(git_diff)))
 
 

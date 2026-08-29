@@ -107,6 +107,8 @@ class FrameworkTests(unittest.TestCase):
         self.assertIn("Never use `-c`", prompt)
         self.assertIn("result_compare must be a plain string", prompt)
         self.assertIn("Never emit a partial or pseudo-diff", prompt)
+        self.assertIn("Encode patch line breaks", prompt)
+        self.assertIn("result_file must be exactly", prompt)
 
     def test_llm_proposal_rejects_non_json_unsafe_commands_and_paths(self) -> None:
         with self.assertRaises(ProposalViolation):
@@ -115,6 +117,14 @@ class FrameworkTests(unittest.TestCase):
             parse_llm_experiment_spec(self._llm_spec(command=["sh", "-c", "echo unsafe"]))
         with self.assertRaises(ProposalViolation):
             parse_llm_experiment_spec(self._llm_spec(git_diff="diff --git a/evaluate.py b/evaluate.py\n--- a/evaluate.py\n+++ b/evaluate.py"))
+        with self.assertRaises(ProposalViolation):
+            parse_llm_experiment_spec(self._llm_spec(command=["python", "experiments/does_not_exist.py"]))
+        with self.assertRaises(ProposalViolation):
+            parse_llm_experiment_spec(self._llm_spec(
+                git_diff="diff --git a/experiments/run_date_dow_fm.py b/experiments/run_date_dow_fm.py\n"
+                "--- a/experiments/run_date_dow_fm.py\n+++ b/experiments/run_date_dow_fm.py\n"
+                "@@ -999,1 +999,1 @@\n-old line\n+new line\n"
+            ))
 
     def test_openai_payload_requests_strict_experiment_schema(self) -> None:
         payload = OpenAIResponsesClient._payload(LLMRequest("openai", "test-model", "prompt"))
@@ -154,6 +164,9 @@ class FrameworkTests(unittest.TestCase):
             self.assertEqual(spec.metadata["name"], "llm-validation-proposal")
             self.assertEqual(store.read_state()["status"], "awaiting_approval")
             self.assertTrue((store.run_dir / "proposal.json").is_file())
+            self.assertTrue((store.run_dir / "llm_request.json").is_file())
+            self.assertTrue((store.run_dir / "llm_response.json").is_file())
+            self.assertEqual((store.run_dir / "llm_output.txt").read_text(encoding="utf-8"), FrameworkTests._llm_spec())
             events = [json.loads(line)["event"] for line in (store.run_dir / "audit.jsonl").read_text(encoding="utf-8").splitlines()]
             self.assertEqual(events, ["llm_request", "llm_response", "proposal_validated"])
 
