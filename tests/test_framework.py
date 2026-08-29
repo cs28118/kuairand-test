@@ -10,7 +10,7 @@ from framework.dependencies import DependencyViolation, request_profile
 from framework.guardrails import GuardrailViolation, reject_protected_paths, validate_scores, verify_official_files
 from framework.isolation import DockerExecutor, DockerWorkspace, IsolationError
 from framework.pilot import run_pilot
-from framework.state import RunStore
+from framework.state import RunStore, make_run_id
 from framework.stopping import StoppingPolicy
 
 
@@ -20,6 +20,14 @@ class FrameworkTests(unittest.TestCase):
         self.assertEqual(config.label, "long_view")
         self.assertEqual(config.development_splits, ("train", "valid"))
         self.assertEqual(config.primary_metric, "primary")
+
+    def test_run_ids_are_persistent_and_sequential(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            runs_dir = Path(temp) / "runs"
+            self.assertEqual(make_run_id(runs_dir=runs_dir), "run-1")
+            self.assertEqual(make_run_id(runs_dir=runs_dir), "run-2")
+            (runs_dir / "run-10").mkdir()
+            self.assertEqual(make_run_id(runs_dir=runs_dir), "run-11")
 
     def test_official_evaluator_fingerprint(self) -> None:
         fingerprints = verify_official_files()

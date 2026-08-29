@@ -1,9 +1,9 @@
- {
-  "hypothesis": "Adding a day-of-week feature lets the FM capture recurring temporal preference patterns and improves validation primary.",
+{
+  "hypothesis": "Adding a day-of-week feature improves validation ranking quality.",
   "git_diff": "diff --git a/data.py b/data.py\n--- a/data.py\n+++ b/data.py\n@@ -2,1 +2,2 @@\n import csv, os, collections\n+from datetime import datetime\n@@ -10,1 +10,1 @@\n-FIELDS = ['user_id', 'video_id', 'author_id', 'tab', 'dur_bucket']\n+FIELDS = ['user_id', 'video_id', 'author_id', 'tab', 'dur_bucket', 'date_dow']\n@@ -42,1 +42,1 @@\n-        return [x[1], x[2], x[3], x[4], str(int(np.searchsorted(edges, x[5])))]\n+        return [x[1], x[2], x[3], x[4], str(int(np.searchsorted(edges, x[5]))), str(datetime.strptime(str(x[0]), '%Y%m%d').weekday())]\n",
-  "description": "Train the existing FM with exactly one added categorical feature. The Docker workspace contains only train/valid dates; the official evaluator remains outside the container.",
-  "result_compare": "Compare the candidate validation GAUC, nDCG@5, and primary against the FM baseline primary of 0.6016.",
-  "next_steps": "Keep the feature only if primary improves beyond the baseline and the gain is meaningful; otherwise revert it and test a different hypothesis.",
+  "description": "Train FM with the proposed feature and evaluate on validation data.",
+  "result_compare": "Compare primary, GAUC, and nDCG@5 against FM baseline primary 0.6016.",
+  "next_steps": "Keep the feature only if the improvement is meaningful; otherwise reject it.",
   "command": ["python", "experiments/run_date_dow_fm.py"],
   "seed": 42,
   "dependency_profile": "base",

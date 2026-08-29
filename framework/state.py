@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import json
 import os
 from pathlib import Path
-import uuid
+import re
 from typing import Any
 
 from .config import REPO_ROOT
@@ -15,8 +15,32 @@ def utc_now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def make_run_id(prefix: str = "run") -> str:
-    return f"{prefix}-{datetime.now(UTC):%Y%m%dT%H%M%SZ}-{uuid.uuid4().hex[:8]}"
+def make_run_id(prefix: str = "run", runs_dir: str | Path | None = None) -> str:
+    """Return the next persistent sequential run ID, such as ``run-1``.
+
+    The counter is stored next to the run directories so it survives process
+    restarts. Existing numeric run directories are also considered, which
+    keeps the counter safe if a custom ``--run-id`` was used previously.
+    """
+    root = Path(runs_dir) if runs_dir else REPO_ROOT / "runs"
+    root.mkdir(parents=True, exist_ok=True)
+    counter_path = root / ".run_counter"
+    try:
+        stored = int(counter_path.read_text(encoding="utf-8").strip())
+    except (FileNotFoundError, ValueError):
+        stored = 0
+
+    pattern = re.compile(rf"^{re.escape(prefix)}-(\d+)$")
+    existing = [
+        int(match.group(1))
+        for entry in root.iterdir()
+        if (match := pattern.fullmatch(entry.name))
+    ]
+    number = max([stored, *existing], default=0) + 1
+    temporary = counter_path.with_suffix(counter_path.suffix + ".tmp")
+    temporary.write_text(f"{number}\n", encoding="utf-8")
+    os.replace(temporary, counter_path)
+    return f"{prefix}-{number}"
 
 
 def atomic_write_json(path: str | Path, payload: dict[str, Any]) -> None:
@@ -33,7 +57,7 @@ class RunStore:
 
     def __init__(self, runs_dir: str | Path | None = None, run_id: str | None = None):
         self.runs_dir = Path(runs_dir) if runs_dir else REPO_ROOT / "runs"
-        self.run_id = run_id or make_run_id()
+        self.run_id = run_id or make_run_id(runs_dir=self.runs_dir)
         self.run_dir = self.runs_dir / self.run_id
         self.state_path = self.run_dir / "state.json"
         self.log_path = self.run_dir / "iterations.jsonl"
