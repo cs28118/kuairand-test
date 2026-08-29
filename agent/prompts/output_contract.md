@@ -17,7 +17,11 @@ Patch and command rules:
 - `git_diff` must be either `""` or a complete patch beginning with `diff --git a/<path> b/<path>`, followed by valid `---`, `+++`, and hunk lines. A complete patch has both file headers and at least one hunk; `+def`, `-line`, or `@@` by itself is not a patch.
 - A code snippet beginning with `+def`, `-line`, or `@@` alone is invalid. Never emit a partial or pseudo-diff.
 - If you cannot produce a complete patch exactly, use `git_diff: ""` and `command: ["python", "experiments/run_date_dow_fm.py"]`. Do not invent a command path.
+- If the requested research goal explicitly asks for a code or feature change, `git_diff` must be non-empty and must implement that requested change. Use the empty-diff fallback only when the goal is a reproduction or measurement; never describe an unimplemented change as if it exists.
 - result_file must be exactly `experiment_result.json`.
+
+Metric names in comparisons must be the repository names `GAUC`, `nDCG@5`, and
+`primary`; do not invent names such as `GAUC@5`.
 
 Final self-check before emitting the object:
 - The first non-whitespace character is `{{` and the last is `}}`.
