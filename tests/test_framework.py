@@ -1,7 +1,10 @@
 import math
+import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from framework.accounting import Budget, BudgetExceeded, CostLedger, TokenUsage
 from framework.config import load_benchmark_config
@@ -9,12 +12,33 @@ from framework.contracts import ExperimentResult, ExperimentSpec
 from framework.dependencies import DependencyViolation, request_profile
 from framework.guardrails import GuardrailViolation, reject_protected_paths, validate_scores, verify_official_files
 from framework.isolation import DockerExecutor, DockerWorkspace, IsolationError
+from framework.llm import LLMRequest, LLMResponse, OpenAIResponsesClient, load_dotenv
 from framework.pilot import run_pilot
+from framework.proposal import ProposalViolation, build_proposal_prompt, parse_llm_experiment_spec
+from framework.propose import approve_and_run, generate_proposal
 from framework.state import RunStore, make_run_id
 from framework.stopping import StoppingPolicy
 
 
 class FrameworkTests(unittest.TestCase):
+    @staticmethod
+    def _llm_spec(**overrides):
+        spec = {
+            "hypothesis": "Test one validation-only variation.",
+            "git_diff": "",
+            "description": "Run an existing isolated validation experiment.",
+            "result_compare": "Compare primary with the FM validation baseline.",
+            "next_steps": "Keep it only if primary improves.",
+            "command": ["python", "experiments/run_date_dow_fm.py"],
+            "seed": 42,
+            "dependency_profile": "base",
+            "result_file": "experiment_result.json",
+            "artifacts": [],
+            "metadata": {"name": "llm-validation-proposal"},
+        }
+        spec.update(overrides)
+        return json.dumps(spec)
+
     def test_benchmark_contract(self) -> None:
         config = load_benchmark_config()
         self.assertEqual(config.label, "long_view")
@@ -72,6 +96,77 @@ class FrameworkTests(unittest.TestCase):
                     "command": "python train.py", "seed": 1,
                 }
             )
+
+    def test_llm_proposal_prompt_has_rules_baselines_and_allowed_files(self) -> None:
+        prompt = build_proposal_prompt(load_benchmark_config(), "Try one ranking hypothesis.")
+        self.assertIn("Never use hidden test data", prompt)
+        self.assertIn("experiments/*.py", prompt)
+        self.assertIn('"primary": 0.6016', prompt)
+        self.assertIn("Return ONLY one JSON object", prompt)
+
+    def test_llm_proposal_rejects_non_json_unsafe_commands_and_paths(self) -> None:
+        with self.assertRaises(ProposalViolation):
+            parse_llm_experiment_spec("```json\n{}\n```")
+        with self.assertRaises(ProposalViolation):
+            parse_llm_experiment_spec(self._llm_spec(command=["sh", "-c", "echo unsafe"]))
+        with self.assertRaises(ProposalViolation):
+            parse_llm_experiment_spec(self._llm_spec(git_diff="diff --git a/evaluate.py b/evaluate.py\n--- a/evaluate.py\n+++ b/evaluate.py"))
+
+    def test_openai_payload_requests_strict_experiment_schema(self) -> None:
+        payload = OpenAIResponsesClient._payload(LLMRequest("openai", "test-model", "prompt"))
+        self.assertEqual(payload["text"]["format"]["type"], "json_schema")
+        self.assertTrue(payload["text"]["format"]["strict"])
+        self.assertIn("command", payload["text"]["format"]["schema"]["properties"])
+
+    def test_openai_client_uses_configured_base_url(self) -> None:
+        client = OpenAIResponsesClient(api_key="test-key", base_url="https://organization.example/v1/")
+        self.assertEqual(client.endpoint, "https://organization.example/v1/responses")
+        with self.assertRaises(Exception):
+            OpenAIResponsesClient(api_key="test-key", base_url="organization.example/v1")
+
+    def test_local_dotenv_loads_without_overriding_process_values(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            dotenv = Path(temp) / ".env"
+            dotenv.write_text("LLM_MODEL=from-file\nNEW_SETTING='quoted value'\n", encoding="utf-8")
+            with patch.dict("os.environ", {"LLM_MODEL": "from-process"}, clear=False):
+                load_dotenv(dotenv)
+                self.assertEqual(os.environ["LLM_MODEL"], "from-process")
+                self.assertEqual(os.environ["NEW_SETTING"], "quoted value")
+
+    def test_generated_proposal_is_audited_before_human_approval(self) -> None:
+        class FakeClient:
+            def generate(self, proposal_request):
+                return LLMResponse(
+                    text=FrameworkTests._llm_spec(), response_id="resp_123",
+                    usage={"input_tokens": 3, "output_tokens": 4, "cached_tokens": 0, "total_tokens": 7}, raw={"id": "resp_123"},
+                )
+
+        with tempfile.TemporaryDirectory() as temp:
+            store = RunStore(Path(temp) / "runs")
+            spec = generate_proposal(
+                client=FakeClient(), provider="openai", model="test-model", goal="one experiment",
+                config=load_benchmark_config(), store=store,
+            )
+            self.assertEqual(spec.metadata["name"], "llm-validation-proposal")
+            self.assertEqual(store.read_state()["status"], "awaiting_approval")
+            self.assertTrue((store.run_dir / "proposal.json").is_file())
+            events = [json.loads(line)["event"] for line in (store.run_dir / "audit.jsonl").read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(events, ["llm_request", "llm_response", "proposal_validated"])
+
+    def test_approved_proposal_is_revalidated_and_audited_with_result(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            store = RunStore(Path(temp) / "runs")
+            store.initialize({"mode": "llm_supervised_proposal"})
+            (store.run_dir / "proposal.json").write_text(self._llm_spec(), encoding="utf-8")
+            result = ExperimentResult(status="completed", metrics={"primary": 0.61})
+            with patch("framework.propose.run_pilot", return_value=result) as pilot:
+                actual = approve_and_run(
+                    store=store, config=load_benchmark_config(), approval_note="reviewed", baseline_primary=0.60,
+                )
+            self.assertEqual(actual.status, "completed")
+            pilot.assert_called_once()
+            events = [json.loads(line)["event"] for line in (store.run_dir / "audit.jsonl").read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(events, ["human_approval", "llm_proposal_result"])
 
     def test_optional_budget_stops_future_usage(self) -> None:
         ledger = CostLedger(Budget(max_total_tokens=10))

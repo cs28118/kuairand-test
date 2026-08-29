@@ -1,4 +1,4 @@
-# Participant Framework — Milestone 2
+# Participant Framework — Milestone 3
 
 This document describes the participant-side preparation for an autonomous ML research agent. It is separate from the hackathon starter-kit README so the official starter instructions remain unchanged.
 
@@ -40,7 +40,28 @@ Each run writes state, append-only iteration records, metrics, and (for FM) a va
 
 - Do not edit `evaluate.py`; the framework detects changes and stops.
 - Development work is limited to the train/validation split. Test evaluation and submissions remain explicit participant actions.
-- The framework contains no LLM client or autonomous coding loop. The pilot accepts a human-written instruction and executes exactly one experiment.
+- An LLM can propose exactly one `ExperimentSpec`, but it cannot execute it. A human must separately approve the saved proposal.
+- There is no autonomous iteration, retry, or research loop.
+
+## LLM-supervised proposal
+
+Set a provider credential and a pinned model in your terminal environment or a local, Git-ignored `.env` file. The framework launcher loads the project-local `.env` automatically, while process environment variables take precedence. Then request one proposal:
+
+```bash
+python -m framework.propose --goal "Test one small pairwise-ranking hypothesis on validation data."
+```
+
+For an organization-provided OpenAI-compatible gateway, set `OPENAI_BASE_URL` to its API root (usually ending in `/v1`). The wrapper then calls `<OPENAI_BASE_URL>/responses`; leave it unset to use the public OpenAI API.
+
+The wrapper sends a structured prompt containing the project rules, validation baselines, allowed files, result contract, and strict `ExperimentSpec` JSON schema. It rejects non-JSON responses, unknown schema fields, non-Python commands, unsafe paths, unapproved dependency profiles, and any attempt to modify a protected or non-allowed file.
+
+The command prints a run ID and writes `runs/<run-id>/proposal.json`. Inspect that file before approving it:
+
+```bash
+python -m framework.propose --approve-run run-1 --approval-note "Reviewed command and patch."
+```
+
+Approval is an explicit second command. Only this command passes the saved spec to `framework.pilot`; the Docker pilot keeps its network, resource, file, and evaluator protections. `audit.jsonl` records the complete LLM request, raw response, validation decision, human approval, and final result.
 
 ## Supervised pilot
 
@@ -71,7 +92,6 @@ python -m framework.pilot --spec experiment.json --baseline-primary 0.6016
 
 Token and cost fields are supported in the result contract but intentionally have no configured prices or limits yet. Approved dependency profiles are declarations only; the framework never installs arbitrary packages.
 
-## Next milestones
+## Next milestone
 
-1. Connect the LLM with structured prompts, safe tool calls, and research/implementation/reviewer roles.
-2. Enable bounded autonomous iterations only after the supervised pilot is validated.
+Enable a bounded autonomous research loop only after two or three LLM-generated, human-approved experiments have completed successfully.
