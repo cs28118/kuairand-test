@@ -160,20 +160,32 @@ Run the Milestone 2 tests with warnings treated as errors:
 & 'C:\Users\user\AppData\Local\Programs\Python\Python312\python.exe' -W error -m unittest tests/test_diagnostics.py -v
 ```
 
-Run all local tests, including the separate Milestone 3 AIDE-adapter tests:
+Run all local tests, including the Milestone 3 planner tests:
 
 ```powershell
 & 'C:\Users\user\AppData\Local\Programs\Python\Python312\python.exe' -W error -m unittest discover -s tests -v
 ```
 
-Verified result: 7 tests passed with no warnings. The real diagnostics command was also rerun with warnings treated as errors and completed successfully:
+Verified result: 13 tests passed with no warnings. The real diagnostics command was also rerun with warnings treated as errors and completed successfully:
 
 ```powershell
 & 'C:\Users\user\AppData\Local\Programs\Python\Python312\python.exe' -W error -m ranklab.diagnostics.report --run-id fm-valid-20260829T152749Z-e36d5761 --data-dir .\KuaiRand-Pure\data
 ```
 
+## Milestone 3 — AIDE-inspired dependency-free hypothesis planner
+
+- [x] Added a fixed local catalogue for ranking-loss, causal-feature, sequence, multitask, and ensemble hypotheses.
+- [x] Added a JSON research policy with iteration/time budgets and forbidden terms/files.
+- [x] Read only diagnostics, the experiment ledger, and the research policy; the planner never loads datasets, predictions, evaluator code, held-out data, or submission files.
+- [x] Generated catalogue candidates only from supported diagnostic opportunities and ranked them deterministically by slice impact, affected users/rows, and expected cost.
+- [x] Used a stable SHA-256 proposal ID derived from run ID, target slice, and experiment family.
+- [x] Blocked over-budget candidates, repeated rejected family/slice pairs without new evidence, unsafe terms, forbidden files, and unknown experiment families.
+- [x] Wrote each valid proposal, validation result, and append-only planner event without authorizing execution.
+- [x] Added planner and validator tests covering determinism, eligibility, rejection history, budget exhaustion, safety, data/test-path isolation, and non-execution.
+- [x] Ran `python -W error -m ranklab.planner.propose --run-id fm-valid-20260829T152749Z-e36d5761`; it wrote validated proposal `proposal-778f77872b7aa89e` with `execution_authorized: false`.
+
 ## Next milestone
 
 - [x] Milestone 2 — Build validation metric slices and a readable diagnostics report.
-- [x] Milestone 3 — Build guarded AIDE integration with structured hypothesis validation.
+- [x] Milestone 3 — Build a guarded, dependency-free hypothesis planner with structured proposal validation.
 - [ ] Milestone 4 — Create the standard isolated experiment runner.

@@ -1,0 +1,27 @@
+{
+  "allowed_files": [
+    "ranklab/losses/ranking_loss.py",
+    "ranklab/configs/ranking_loss.json"
+  ],
+  "evidence": [
+    "primary 0.496154, -0.105315 versus overall validation primary 0.601469; 1508 users and 2028 rows.",
+    "The model lacks an explicit causal representation of prior user-item or user-author behavior."
+  ],
+  "execution_authorized": false,
+  "expected_cost_minutes": 20,
+  "experiment_family": "ranking_loss",
+  "hypothesis": "Overall validation nDCG@5 is weaker than GAUC. Addressing item_familiarity_train_saw_video=yes may improve validation primary.",
+  "planned_changes": [
+    "Add a validation-only ranking-loss challenger for item_familiarity_train_saw_video=yes.",
+    "Compare it against the current pointwise baseline using validation primary."
+  ],
+  "priority": 10.678941,
+  "proposal_id": "proposal-778f77872b7aa89e",
+  "risks": [
+    "Within-user objectives can reduce global calibration."
+  ],
+  "rollback_condition": "Reject if validation primary does not improve.",
+  "run_id": "fm-valid-20260829T152749Z-e36d5761",
+  "success_criterion": "Validation primary improves by at least 0.002.",
+  "target_slice": "item_familiarity_train_saw_video=yes"
+}

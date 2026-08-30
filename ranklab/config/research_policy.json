@@ -1,0 +1,19 @@
+{
+  "max_iterations": 50,
+  "time_budget_minutes": 360,
+  "forbidden_files": [
+    "evaluate.py",
+    "data.py",
+    "baseline.py",
+    "submit.py"
+  ],
+  "forbidden_terms": [
+    "test data",
+    "test split",
+    "test labels",
+    "leaderboard",
+    "submission scoring",
+    "external data"
+  ],
+  "minimum_validation_primary_improvement": 0.002
+}
