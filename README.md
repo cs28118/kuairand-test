@@ -171,3 +171,62 @@ print(evaluate(user_ids, labels, scores))   # scores 可以来自任何模型
 | `baseline_scores.json` | 官方发布的分数 + 种子方差 + 收敛参数。 |
 | `submit.py` | 生成 / 校验提交文件。 |
 | `ablation_features.py` | 特征消融实验，可复现「加特征没有收益」那组数字。 |
+
+
+
+--------------------------------------------------------------------------------------------------------------------------
+## Experiment Log
+
+### Experiment 1: Learning Rate
+
+We evaluated three learning rates against the original FM baseline. None of the tested configurations improved the validation score, so none were retained.
+
+| Configuration                  | Validation Primary | Test Primary |
+| ------------------------------ | -----------------: | -----------: |
+| Original baseline (`lr=0.001`) |             0.6015 |       0.5953 |
+| `lr=0.002`                     |             0.6008 |       0.5951 |
+| `lr=0.0005`                    |             0.6014 |       0.5957 |
+
+Although `lr=0.0005` achieved a slightly higher test score, the test set was not used for model selection or hyperparameter tuning. Since its validation score remained below the baseline, this configuration was rejected.
+
+### Experiment 2: L2 Regularization
+
+We increased the L2 regularization strength to reduce overfitting.
+
+* Modification: `l2=1e-6` → `l2=1e-5`
+* Validation Primary: `0.6025`
+* Test Primary: `0.5947`
+* Result: **Retained**
+
+The validation primary score improved by approximately `0.0010` compared with the original baseline.
+
+### Experiment 3: User–Tab Cross Feature
+
+We added a cross feature representing the interaction between each user and the tab in which a video was shown.
+
+| Configuration                  | Validation GAUC | Validation nDCG@5 | Validation Primary |
+| ------------------------------ | --------------: | ----------------: | -----------------: |
+| Best configuration (`l2=1e-5`) |          0.6685 |            0.5365 |         **0.6025** |
+| Added `user_tab` feature       |          0.6675 |            0.5363 |         **0.6019** |
+
+The `user_tab` feature decreased the validation primary score from `0.6025` to `0.6019`. Therefore, this feature was rejected.
+
+### Experiment 4: Pairwise FM
+
+We replaced the original pointwise log-loss with a pairwise BPR-style objective.
+
+* Validation Primary: `0.5246`
+* Result: **Rejected**
+* Reason: The BPR loss remained close to `0.693`, indicating that the model parameters were not receiving sufficiently effective updates.
+* Recovery: Reverted to the original pointwise FM implementation.
+
+### Experiment 5: Pairwise FM with Modified Gradient Updates
+
+We modified the gradient directions and increased the pairwise model's learning rate in an attempt to improve training stability.
+
+* Validation Primary: `0.4887`
+* Test Primary: `0.4295`
+* Result: **Rejected**
+* Reason: Although the pairwise loss decreased slightly, the ranking metrics deteriorated substantially. This indicated that the simple SGD-based pairwise implementation was unstable and unsuitable for the current pipeline.
+
+The final retained configuration was the pointwise FM model with `l2=1e-5`, which achieved a validation primary score of `0.6025`.
